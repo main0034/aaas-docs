@@ -1,0 +1,7 @@
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+
+# Nothing else belongs here. If something needs ignoring, it probably belongs
+# in one of the sibling repositories instead.
