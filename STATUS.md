@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 7 September 2026, at the end of the first working session. Start here in a new conversation.
+Written 22 September 2026, at the end of the OQ-13 / .NET session. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -25,13 +25,16 @@ Written 7 September 2026, at the end of the first working session. Start here in
 - **Phase 4b** — cross-repo image handoff proven for **both** create and update: app merge → image build → automated deployment PR → applied revision
 - **Phase 4a** — the agent produces infrastructure: one plain-language request → PR #7, `Plan: 14 to add, 0 to change, 0 to destroy`, 4m 11s, no human edit to the tfvars (finding 14)
 - **Passwordless database auth** — Entra-only Postgres; no credential in state, Key Vault, a Container App secret, or the repo
+- **.NET 10 scaffold (D-20)** — template and demo both on ASP.NET Core minimal APIs, EF Core, xUnit v3; CI adds a format check, warnings-as-errors, a model-vs-migration check and two migration guards
+- **Schema migrations (D-21)** — EF Core migrations applied by a `migrate` init container (`app-stack` v0.3.0), proven in Azure on create and on update, with the identity token working in the init container
+- **A failing migration is safe** — one transaction, rolled back whole, old revision keeps serving, data untouched (finding 16)
 
-Verified working: `GET /ready` → `{"database": "ok", "auth": "managed-identity"}`
+Verified working: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260922174809_AddItemPriority"}`
 
 
 ## Written, not yet run
 
-- **`agent/create-app.md`** — written for review alongside the harness, on hold until OQ-13 (it instructs the agent to use versioned migrations that do not exist). Not exercised until 4c.
+- **`agent/create-app.md`** — rewritten for .NET and committed. Not runnable yet: the harness image has no .NET SDK and its policy allows only `git`, `gh`, `jq` and the schema validator. Making it runnable is the first step of Phase 4c.
 
 ## Not started
 
@@ -41,13 +44,16 @@ Verified working: `GET /ready` → `{"database": "ok", "auth": "managed-identity
 
 ## Next step
 
-Phase 4a is done. Three candidates, roughly in order of how much they unblock:
+OQ-13 is closed (D-21). The deploy loop now has a hole worth more than any new feature:
 
-1. **OQ-13 — pick a migration tool.** It blocks Phase 7 (code generation) and
-   `create-app.md` currently promises something the scaffold does not have.
-2. **Phase 4c — chain create-app and create-deployment.** Needs 1 first.
-3. **Merge PR #7** if you want the applied proof. Fifteen minutes, and per
-   finding 8 leave it up rather than cycling create/destroy while working.
+1. **Post-apply readiness gate (D-22).** A green apply is not evidence the app runs — proven in
+   finding 16. The gate forces a replica, waits, and asserts `/ready` reports the expected
+   migration; it also has to surface `app_url` and, on failure, the init container's log from
+   Log Analytics (OQ-22).
+2. **OQ-21 — "immutable once applied", not "once merged".** Today a merged-but-never-applied
+   migration cannot be fixed forward without a human override.
+3. **Phase 4c — the harness needs a .NET SDK and a policy that allows `dotnet`**, or
+   `create-app.md` cannot be run at all.
 
 Running the agent again, for reference:
 
@@ -80,7 +86,7 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: destroyed.** `deployments/dev/demo/` still exists in git, so any push touching `deployments/**` will recreate the whole stack (~15 minutes, ~$20/month). Deliberate — teardown is a pause, not a deletion.
+- **Infrastructure: destroyed** (22 September, after the create/update/failure tests). `deployments/dev/demo/` still exists in git, so any push touching `deployments/**` will recreate the whole stack (~15 minutes, ~$20/month). Deliberate — teardown is a pause, not a deletion.
 - Repos are public (needed for branch protection on the free plan)
 - GHCR package `aaas-app-demo` is public, so `registry_username` is `""`
 - Module is at tag `v0.2.0`

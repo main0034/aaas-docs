@@ -319,10 +319,92 @@ The file-mode one deserves a note of its own: it existed **only in one working c
 
 ---
 
+## 15. The scaffold is C#/.NET now, and the compiler pays for itself
+
+D-20. The Python scaffold was replaced by ASP.NET Core minimal APIs on .NET 10, EF Core with
+Npgsql, xUnit v3, in a chiseled non-root image (193MB). Agent support was not the deciding
+factor and is not a differentiator either way; the reasons that held up were: the compiler is a
+free deterministic gate (D-17) for a class of mistakes Python only surfaces at runtime, Npgsql +
+Azure.Identity support the Entra token natively, EF Core gave a mature migration tool that works
+over the app's own tokenised connection, and the output is code a Swedish SMB's Microsoft
+partner can maintain (OQ-3, and the Power Platform counter-argument).
+
+Four bugs were found by running the template's own checks before anything reached Azure, and
+the first is the one worth remembering:
+
+| Found by | Bug |
+|---|---|
+| A test | An invalid request returned **503 instead of 400** with no database configured. Minimal APIs resolve `AppDbContext` during parameter binding, *before* validation runs, so a context that threw on construction turned every validation error into a database error. Fixed by making the context always constructible and failing at connection-open instead |
+| Build | Npgsql pulled EF Core 10.0.4 alongside 10.0.12. Only a warning — and `TreatWarningsAsErrors` does not cover MSBuild warnings, which is its own trap |
+| Running the image | EF logged `fail:` lines on a fresh database and whenever replicas raced, which in an init container log reads like the cause of whatever failed next |
+| Running the image | Npgsql probes for Kerberos (GSSAPI); the chiseled image has no Kerberos library |
+
+**A local `dotnet` loop is not enough on its own.** `dotnet ef` spells the build configuration
+`--configuration`, because its `-c` means `--context` — a mistake that only shows up when the
+command actually runs.
+
+## 16. A green deploy proves nothing at `min_replicas = 0`
+
+This answers OQ-19, and the answer is the bad one. The test: two items sharing a title, then a
+migration adding a unique index on that column. It passes CI — CI's database is empty — and can
+only fail in Azure, which is the realistic shape of a production migration failure.
+
+Sequence, 22 September:
+
+| | |
+|---|---|
+| `terraform apply` | **success**, 18:53:26. Nothing in the pipeline said otherwise |
+| New revision `--0000002` | `ActivationFailed`, 1 replica, **100% traffic assigned** |
+| Old revision `--0000001` | `Running`, 0% traffic — and it is what served every request |
+| First request after the deploy | 200, after **42.8s** (scale from zero) |
+| `/ready` | still `20260922174809_AddItemPriority` — the failed migration applied nothing |
+| Data | all three rows intact, including the duplicates |
+
+**The migration itself behaved exactly as designed.** One transaction, rolled back whole, a
+single legible first line in the init container log:
+`[migrate] FAILED: 23505: could not create unique index "IX_items_title"`. Nothing was
+half-applied, the old code kept serving, and the data was untouched. That part is the design
+working.
+
+**The deployment pipeline is what failed.** At `min_replicas = 0` there is no replica to start
+at apply time, so nothing exercises the new revision and `apply` reports success. The app is
+then "successfully deployed" and broken, and the first person to visit it discovers that — after
+waiting 42 seconds. For the §2 persona that is the entire failure mode in one sentence.
+
+Three consequences:
+
+1. **A deploy needs a post-apply readiness gate** that forces a replica, waits, and asserts
+   `/ready` reports the migration the release expects. Without it, "the pipeline went green" is
+   not a statement about the application at all. See D-22.
+2. **`az containerapp logs show --container migrate` cannot find the init container**
+   (`Could not find container`). The one line that explains the failure is reachable only by
+   querying Log Analytics directly (`ContainerAppConsoleLogs_CL | where ContainerName_s ==
+   "migrate"`). Whatever surfaces failures to a human has to know that.
+3. **Traffic weight lies.** The portal and CLI show 100% pointed at a revision that never ran.
+   Only `runningState` distinguishes a working deployment from this one.
+
+**Also learned, and reassuring:** EF's `AlterColumn` with a `defaultValue` backfills existing
+nulls, so making a column non-nullable does *not* fail against live data. That class of change
+is safer than expected — the dangerous ones are uniqueness and foreign keys, where existing data
+decides.
+
+**One rule is now known to be wrong.** `scripts/check-migrations.sh` forbids editing a migration
+that is *merged*. The migration that failed here was merged and never applied, so fixing it
+forward is blocked by the guard, and recovery needs a human override. The rule should be
+"immutable once **applied**", which the pipeline cannot currently tell. See OQ-21.
+
+## 17. Nothing tells anyone where the app is
+
+The apply produces `app_url` as a Terraform output and then drops it. Finding the running
+application means opening the Actions log or the Azure portal — both closed to the §2 persona,
+and both awkward for us. The deployment PR is the natural place to post it, and the readiness
+gate in D-22 has to fetch the URL anyway.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
 - **How long prompt-to-running-app takes.** Half answered: prompt-to-PR is **4m 11s** (finding 14). Prompt-to-*running* is still unknown, because PR #7 was deliberately not merged — Phase 4a ends at a green plan.
 - Whether teardown is clean
+- ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it is not, at `min_replicas = 0`.
 - **The escape hatch:** touched, not answered (finding 14). We now know the agent refuses gracefully and explains itself when a request exceeds the module. We still do not know what the *product* does at that moment, which remains the hardest question in the idea.
 - **What agent cost looks like at scale** (finding 14, OQ-18). One run is $0.65 of shadow API cost, dominated by context rather than output, and a follow-up question costs about as much as the original work. Untested: whether trimming the carried context after the tfvars is written materially changes that.

@@ -1,6 +1,6 @@
 # Next session
 
-Written 20 September 2026 at the end of the Phase 4a session. Replaced wholesale at the end
+Written 22 September 2026 at the end of the OQ-13 / .NET session. Replaced wholesale at the end
 of every session — this file is intent, not history. What actually happened lives in
 `FINDINGS.md`, where things stand lives in `STATUS.md`.
 
@@ -8,99 +8,95 @@ of every session — this file is intent, not history. What actually happened li
 
 ## Topic
 
-**OQ-13 — choose and install the migration tool.**
+**D-22 — the post-apply readiness gate.** Make a green deploy mean the application actually
+runs.
 
 One topic. If something else turns out to block it, say which and why before widening.
 
 ## Why this one
 
-Two things depend on it, and nothing else does:
+Finding 16 is the whole argument, and it is not a hypothetical: a migration that fails only
+against live data produced
 
-- `agent/create-app.md` is written but **uncommitted on purpose**, because it instructs the
-  agent to put schema changes through versioned migrations and the scaffold has no migration
-  tool. Shipping a runbook that promises a mechanism that does not exist is how an agent ends
-  up inventing one.
-- Phase 7 (code generation) cannot start until the scaffold can evolve a schema without
-  losing data. The agent will change the data model repeatedly and `POC-PLAN.md` §4.3 is
-  explicit that this must not be ad-hoc DDL.
+- `terraform apply` → **success**
+- revision `--0000002` → **`ActivationFailed`**, holding **100% of the traffic**
+- the previous revision still serving every request
+- the first visitor waiting **42.8s** to reach an app running the old code
 
-Phase 4c (chaining create-app and create-deployment) sits behind this too, since it runs
-`create-app.md`.
+At `min_replicas = 0` nothing starts during the apply, so nothing fails. Every downstream
+promise — fix-forward (Phase 5), rollback as one button (§2), day-2 operations (§6 Operator) —
+assumes the pipeline knows whether a deploy worked. Right now it does not.
 
 ## Read first, in this order
 
 | File | Why |
 |---|---|
-| `STATUS.md` | Current position. Phase 4a is proven; check nothing has changed since. |
-| `FINDINGS.md` finding 14 | What the first agent run taught us, including the cost shape. |
-| `aaas-app-template/AGENT.md` | The conventions any migration tool has to live inside. |
-| `aaas-app-template/app/db.py` | How the connection is made — Entra token at connect time, no password. This constrains the tool choice more than anything else. |
-| `aaas-deployments/agent/create-app.md` | The runbook that is waiting on this decision. |
+| `FINDINGS.md` finding 16 | The evidence, with the exact states and timings. |
+| `FINDINGS.md` finding 17 | `app_url` is produced and discarded; the gate needs it anyway. |
+| `STATUS.md` | Current position; infrastructure is destroyed. |
+| `aaas-deployments/.github/workflows/apply.yml` | Where the gate goes. |
+| `aaas-infra-modules/modules/app-stack/README.md` | "Known behaviours" now records what a failed migration looks like. |
 
 ## State to verify before starting
 
 Don't trust this file on any of these — check:
 
-- Is `agent/create-deployment.md` (the `--body-file` fix) pushed? If not, the next agent run
-  repeats a refusal that is already fixed locally.
-- Is `aaas-agent` pushed? It was four commits ahead at the end of the last session.
-- Is PR #7 still open, and is infrastructure still destroyed? Nothing should be costing money.
+- Is infrastructure still destroyed? Nothing should be costing money.
+- Are `aaas-docs` and the `app-stack` README change pushed?
+- Does `aaas-deployments/master` contain `agent/create-app.md`?
+- Is `app-stack` still at `v0.3.0`, and does `deployments/dev/demo/main.tf` pin it?
 
 ## The work
 
-1. **Establish the constraint that actually decides this.** The app authenticates to Postgres
-   with a managed identity and a short-lived Entra token fetched at connect time — there is
-   no password and no `DATABASE_URL`, deliberately (finding 11). Most migration tools expect
-   a connection string. Whichever tool is chosen has to accept a connection created by the
-   application's own code, or be able to fetch the token itself. **Check this before
-   comparing features; it eliminates candidates faster than anything else.**
-
-2. **Decide where migrations run.** Three options, and they have different failure modes:
-   at container start-up (simple, but every replica races and a failed migration becomes a
-   failed deploy), as a separate CI step before the image is deployed (clean, needs network
-   access to a private-networked database), or as a one-off job. The private networking from
-   Phase 1 makes the CI option harder than it looks — the database has no public endpoint.
-
-3. **Add the tool to `aaas-app-template`** with one real migration, so the template is still
-   immediately buildable and deployable as-is.
-
-4. **Update `AGENT.md`** with the convention: where migration files live, how they are named,
-   what the agent must never do (edit an applied migration).
-
-5. **Then commit `create-app.md`** — it goes straight to master, because the `guardrails` job
-   fails any PR touching `agent/`.
+1. **Decide what the gate asserts.** The minimum that would have caught finding 16: force a
+   replica (one request to `/health`, or set `min_replicas = 1` for the duration), then poll
+   `/ready` until it reports the migration this release expects — not merely that it answers.
+   The expected migration ID has to come from somewhere; the image knows it, the pipeline does
+   not. That is the design question.
+2. **Decide where it runs.** A step in `apply.yml` after `terraform apply` is the obvious place,
+   and it needs `app_url` from the Terraform output — which also fixes finding 17.
+3. **Decide what happens when it fails.** The apply already succeeded and the revision is
+   broken. Options: fail the workflow and leave it (the old revision is still serving, so the
+   customer is not down), or attempt an automatic rollback to the previous image. Rollback is a
+   second deploy and can fail the same way. Relevant to OQ-5.
+4. **Surface the reason.** On failure, fetch the init container's log from Log Analytics
+   (`ContainerAppConsoleLogs_CL | where ContainerName_s == "migrate"`) and put the
+   `[migrate] FAILED:` line in the workflow summary or on the commit. `az containerapp logs
+   show --container migrate` does not work — it answers `Could not find container`.
+5. **Prove it** with the same test that produced finding 16: two items sharing a title, then the
+   `UniqueItemTitle` migration. The branch is gone but the recipe is in finding 16. The gate
+   must go red.
 
 ## Decisions I will need from you
 
-- Which tool. My starting view is Alembic, on the grounds that it is the default for a
-  Python/SQLAlchemy-adjacent stack and the agent will have seen the most of it — but the
-  template uses raw `asyncpg` with no ORM, and Alembic without SQLAlchemy models is mostly
-  hand-written SQL in a versioning wrapper. A plain SQL migration runner may fit better.
-  Expect me to argue this rather than assume it.
-- Where migrations run (step 2). This is a real architectural choice, not a detail.
+- **How the pipeline learns the expected migration ID.** Candidates: the image writes it to a
+  file the release reads, `release.yml` extracts it from the built image, or `/ready` grows a
+  "pending migrations" count and the gate asserts zero. The third is the smallest and needs no
+  new plumbing — expect me to argue for it.
+- **Fail-and-stop versus automatic rollback** when the gate goes red (step 3).
+- Whether the gate also runs on the *first* apply, where there is no previous revision to fall
+  back to and a failure means the app has never worked.
 
 ## Done when
 
-- The template has a migration tool, one migration, and still builds and passes CI.
-- `AGENT.md` states the convention.
-- `create-app.md` is committed and pushed, no longer promising something imaginary.
-- A decision row is in `AaaS-context.md` §7 and OQ-13 is deleted from §8.
+- A deploy whose migration fails against live data turns the pipeline red.
+- The failure names the cause, from the init container's own log.
+- `app_url` is visible without opening the Actions log or the portal.
+- `AaaS-context.md` §7 has the outcome and D-22 is either satisfied or amended.
 
 ## Explicitly not this session
 
-- Phase 4c. It comes after.
+- Phase 4c and the harness's missing .NET SDK. It is next, not now.
 - Anything commercial — parked under D-19.
-- Revisiting Azure. Closed under D-13.
+- Revisiting Azure, or the .NET decision (D-20). Closed.
 
 ## Carried over
 
-- **Decide whether `gh pr close` should be allowed.** The policy currently refuses it while
-  `PROMPT.md` only forbids merging, so the agent offered to close PR #7 and would have been
-  refused. Small, but it is a mismatch between what the agent believes it can do and what the
-  gate allows, which is the class of thing the refusal log exists to eliminate.
-- **Resume is not implemented.** `session_id` is now recorded; the container discards the
-  session store (`--rm`) and keys sessions by a per-run working directory. Documented in
-  `aaas-agent/README.md`. Nothing needs it yet.
-- **`.terraform.lock.hcl` does not exist.** Each CI run resolves azurerm afresh within
-  `~> 4.20`, so provider versions can drift between runs. One `terraform init` away.
+- **OQ-21 — "immutable once merged" is the wrong rule.** The guard blocks fixing forward a
+  migration that was merged but never applied, which is exactly the state finding 16 produced.
+  Needs the pipeline to know what each estate has applied (same missing fact as OQ-16).
+- **Phase 4c needs a .NET SDK in the harness image** and a policy that allows `dotnet`.
+  `create-app.md` is committed and says so at the top.
+- **`gh pr close` is refused by the policy** while `PROMPT.md` only forbids merging.
+- **`.terraform.lock.hcl` does not exist.** Provider versions can drift between runs.
 - **Offer to turn this hand-off into a skill**, so preparing it does not depend on remembering.
