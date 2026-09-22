@@ -400,6 +400,46 @@ application means opening the Actions log or the Azure portal — both closed to
 and both awkward for us. The deployment PR is the natural place to post it, and the readiness
 gate in D-22 has to fetch the URL anyway.
 
+## 18. Teardown outlived its credential — twice, identically
+
+Destroying the stack on 22 September failed, and re-running it failed the same way. Both runs
+ended with three errors that all named authorization:
+
+```
+githubAssertion: cannot request token: Get "https://run-actions-1-azure-eastus...
+/idtoken/...": giving up after 1 attempt(s): context deadline exceeded
+```
+
+**The authorization error is the symptom, not the cause.** Read the timings instead: the same
+three resources — `azurerm_postgresql_flexible_server_database`,
+`azurerm_postgresql_flexible_server_active_directory_administrator` and
+`azurerm_postgresql_flexible_server_configuration.ssl` — sat in `Still destroying...` for
+**over 30 minutes in both runs**. Terraform was stuck polling Azure operations that never
+completed; when it eventually needed to renew the short-lived OIDC assertion, GitHub's id-token
+endpoint was no longer reachable for that job, and the run died reporting the renewal rather
+than the hang.
+
+Two things this cost, both of which generalise:
+
+1. **A failure whose message points at the wrong layer.** Anyone reading these errors starts
+   debugging federated credentials — which are fine, and which were fine in the apply ten
+   minutes earlier. The evidence that matters (30 minutes of no progress on three resources) is
+   several hundred lines further up, in lines that all look like routine progress.
+2. **Retrying is not a recovery path.** The second run repeated the hang exactly. Recovery was
+   `az group delete -n rg-demo-dev --yes --no-wait`, followed by one more `destroy.yml` run to
+   let Terraform refresh, see 404s, and empty its state.
+
+**For the product this is the OQ-14 question with a face on it.** The §2 persona cannot read an
+Actions log, cannot tell a hang from an auth error, and cannot run `az group delete`. A teardown
+that half-works and then reports the wrong reason is exactly the class of operation that needs
+either a supervised recovery path or a design that cannot get into this state.
+
+**Unanswered, and worth knowing before the next teardown:** why those three child resources hang
+at all. Candidates: the Entra administrator delete polling a principal whose identity is already
+gone, or the server having a pending operation from the failed revision. Deleting the resource
+group succeeded immediately, so whatever it is lives in the per-resource delete path, not in
+Azure's ability to remove the resources.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.

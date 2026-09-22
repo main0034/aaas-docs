@@ -98,5 +98,9 @@ Don't trust this file on any of these — check:
 - **Phase 4c needs a .NET SDK in the harness image** and a policy that allows `dotnet`.
   `create-app.md` is committed and says so at the top.
 - **`gh pr close` is refused by the policy** while `PROMPT.md` only forbids merging.
+- **Teardown is not reliable (finding 18).** Destroy hung on three Postgres child resources for
+  30+ minutes and failed on OIDC renewal, twice; recovery was `az group delete`. Related to the
+  readiness gate only in kind — both are "the pipeline reports the wrong layer" — but it is its
+  own piece of work, and it decides whether `destroy.yml` is safe to hand to anyone.
 - **`.terraform.lock.hcl` does not exist.** Provider versions can drift between runs.
 - **Offer to turn this hand-off into a skill**, so preparing it does not depend on remembering.

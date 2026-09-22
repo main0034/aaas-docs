@@ -444,7 +444,11 @@ commercial and start being legal.
   100% pointed at a revision that never ran. The readiness gate (D-22) has to fetch the URL and
   read the init container's log anyway, so this is one piece of work, not three. What a
   non-technical user is told when it fails is the open part.
-- **OQ-14 — Operations that fail unrecoverably.** A cancelled workflow left the Terraform state
+- **OQ-14 — Operations that fail unrecoverably.** **Second instance, 2026-09-22 (finding 18):**
+  teardown hung for 30+ minutes on three Postgres child resources and then failed reporting an
+  OIDC renewal error, twice in a row. Recovery was a manual `az group delete` plus a third run to
+  empty the state. Two distinct failures now share a shape — the pipeline reports the layer that
+  noticed, not the layer that broke — and neither had an automatic recovery path. A cancelled workflow left the Terraform state
   lease held, and recovery required a manual `az storage blob lease break` against the state
   account. For the §2 persona that is not a recovery step — the equivalent trigger is closing a
   browser tab. A `unlock.yml` workflow exists for this one case; the general question is which
