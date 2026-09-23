@@ -65,21 +65,9 @@ These are load-bearing. If a proposal violates one, flag it explicitly.
 
 ## Next session
 
-§9 of the context doc is stale — ignore its ordering and use `STATUS.md`.
-
-**Immediate:** run the agent harness (`aaas-agent/`) once, end to end, and time it. It has
-never been executed. Everything downstream of it is guesswork until it has.
-
-**Then, in rough order:**
-
-1. OQ-13 — pick the migration tool. It blocks code generation (Phase 7) and the scaffold
-   currently promises something it does not have.
-2. OQ-3c — the ten SMB conversations. Still the cheapest unanswered question, and the only one
-   that can invalidate D-13.
-3. OQ-15 — automate and *verify* per-repo identity provisioning. This is the onboarding
-   surface, and the POC's evidence is that every item in it fails silently.
-
-**One topic per session.**
+Deliberately not recorded here. `NEXT-SESSION.md` in `aaas-docs` is the only place the next
+topic lives, and it is rewritten at the end of every session. A second copy in this file went
+stale within days and contradicted it — the same drift this setup exists to prevent.
 
 ## Ending a session
 
