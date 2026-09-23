@@ -1,106 +1,101 @@
 # Next session
 
-Written 22 September 2026 at the end of the OQ-13 / .NET session. Replaced wholesale at the end
-of every session — this file is intent, not history. What actually happened lives in
+Written 23 September 2026 at the end of the D-22 readiness-gate session. Replaced wholesale at
+the end of every session — this file is intent, not history. What actually happened lives in
 `FINDINGS.md`, where things stand lives in `STATUS.md`.
 
 ---
 
 ## Topic
 
-**D-22 — the post-apply readiness gate.** Make a green deploy mean the application actually
-runs.
+**Phase 4c — make the agent able to write the application.** A .NET SDK in the harness image,
+a policy that allows `dotnet`, a token that can reach an app repo, and one run of
+`agent/create-app.md` end to end, timed.
 
 One topic. If something else turns out to block it, say which and why before widening.
 
 ## Why this one
 
-Finding 16 is the whole argument, and it is not a hypothetical: a migration that fails only
-against live data produced
-
-- `terraform apply` → **success**
-- revision `--0000002` → **`ActivationFailed`**, holding **100% of the traffic**
-- the previous revision still serving every request
-- the first visitor waiting **42.8s** to reach an app running the old code
-
-At `min_replicas = 0` nothing starts during the apply, so nothing fails. Every downstream
-promise — fix-forward (Phase 5), rollback as one button (§2), day-2 operations (§6 Operator) —
-assumes the pipeline knows whether a deploy worked. Right now it does not.
+The deploy loop is now honest: a green pipeline means the app runs (D-22, finding 19). The
+biggest unknown left in the POC is still the one in finding 14 — **prompt-to-running-app time**
+— and it cannot be measured while `create-app.md` is a runbook the agent is physically unable
+to follow. Every `dotnet` command in it would be refused by the policy, and the image has no SDK.
+Phase 5 (fix-forward) and Phase 7 (code generation) both sit on top of this.
 
 ## Read first, in this order
 
 | File | Why |
 |---|---|
-| `FINDINGS.md` finding 16 | The evidence, with the exact states and timings. |
-| `FINDINGS.md` finding 17 | `app_url` is produced and discarded; the gate needs it anyway. |
-| `STATUS.md` | Current position; infrastructure is destroyed. |
-| `aaas-deployments/.github/workflows/apply.yml` | Where the gate goes. |
-| `aaas-infra-modules/modules/app-stack/README.md` | "Known behaviours" now records what a failed migration looks like. |
+| `aaas-deployments/agent/create-app.md` | The runbook this session makes runnable. Its header says what is missing. |
+| `aaas-agent/harness/policy.py` | `ALLOWED_COMMANDS`, and the `python3` reasoning at the top — `dotnet` is the same problem, larger. |
+| `aaas-agent/Dockerfile`, `aaas-agent/scripts/verify-isolation` | What the image deliberately lacks, and what is asserted at start. |
+| `FINDINGS.md` findings 14 and 19 | 14: what the first agent run cost and where. 19, point 5: token permissions are a boundary GitHub enforces. |
+| `aaas-app-template/AGENT.md` | The conventions the agent has to write within. |
 
 ## State to verify before starting
 
 Don't trust this file on any of these — check:
 
-- Is infrastructure still destroyed? Nothing should be costing money.
-- Are `aaas-docs` and the `app-stack` README change pushed?
-- Does `aaas-deployments/master` contain `agent/create-app.md`?
-- Is `app-stack` still at `v0.3.0`, and does `deployments/dev/demo/main.tf` pin it?
+- **Is infrastructure still running?** It was left up on 23 September (`rg-demo-dev`, image
+  `a708ec8`, ~$20/month). If it is, decide whether to keep it for this session's end-to-end run
+  or destroy it and let the run recreate it.
+- Are `aaas-docs` and `aaas-deployments` pushed? (Docs were committed but not pushed at the end
+  of the last session.)
+- Is `aaas-app-demo` local checkout still on the stale `test/unique-title` branch with an
+  uncommitted `http/items.http` edit? Origin's `master` is `43d8be2`.
+- Does `aaas-agent` build and pass its tests as it stands, before anything is changed?
+- Is the `.session-token` file in `aaas/` gone and the token revoked?
 
 ## The work
 
-1. **Decide what the gate asserts.** The minimum that would have caught finding 16: force a
-   replica (one request to `/health`, or set `min_replicas = 1` for the duration), then poll
-   `/ready` until it reports the migration this release expects — not merely that it answers.
-   The expected migration ID has to come from somewhere; the image knows it, the pipeline does
-   not. That is the design question.
-2. **Decide where it runs.** A step in `apply.yml` after `terraform apply` is the obvious place,
-   and it needs `app_url` from the Terraform output — which also fixes finding 17.
-3. **Decide what happens when it fails.** The apply already succeeded and the revision is
-   broken. Options: fail the workflow and leave it (the old revision is still serving, so the
-   customer is not down), or attempt an automatic rollback to the previous image. Rollback is a
-   second deploy and can fail the same way. Relevant to OQ-5.
-4. **Surface the reason.** On failure, fetch the init container's log from Log Analytics
-   (`ContainerAppConsoleLogs_CL | where ContainerName_s == "migrate"`) and put the
-   `[migrate] FAILED:` line in the workflow summary or on the commit. `az containerapp logs
-   show --container migrate` does not work — it answers `Could not find container`.
-5. **Prove it** with the same test that produced finding 16: two items sharing a title, then the
-   `UniqueItemTitle` migration. The branch is gone but the recipe is in finding 16. The gate
-   must go red.
+1. **SDK in the image.** Add the .NET 10 SDK to `aaas-agent/Dockerfile`, matching the
+   template's `global.json`. Keep `verify-isolation` asserting that `az`/`terraform` are absent.
+2. **Policy for `dotnet`.** Allow the subcommands the runbook names (`build`, `test`, `format`,
+   `ef migrations add`, `restore`) and refuse the rest (`tool install`, `new` outside the
+   template, `nuget add source`). Say in the code, as for `python3`, that this is not the
+   boundary: `dotnet build` and `dotnet test` execute arbitrary code by design.
+3. **Token for the app repo.** The agent's `GH_TOKEN` is scoped to `aaas-deployments`.
+   `create-app.md` pushes to an application repo. Widen it to exactly one app repo, with
+   Contents + Pull requests and **no Workflows permission** (finding 19).
+4. **Run it once**, against `aaas-app-demo` with a small change, and time it: prompt → app PR →
+   merge → image → deployment PR → merge → readiness gate green. That is the number finding 14
+   left open.
+5. **Read the refusals** in `runs/<id>/report.md` and fix the runbook where a refusal recurs.
 
 ## Decisions I will need from you
 
-- **How the pipeline learns the expected migration ID.** Candidates: the image writes it to a
-  file the release reads, `release.yml` extracts it from the built image, or `/ready` grows a
-  "pending migrations" count and the gate asserts zero. The third is the smallest and needs no
-  new plumbing — expect me to argue for it.
-- **Fail-and-stop versus automatic rollback** when the gate goes red (step 3).
-- Whether the gate also runs on the *first* apply, where there is no previous revision to fall
-  back to and a failure means the app has never worked.
+- **What contains `dotnet`.** Once the agent can run `dotnet test`, it can run any code it
+  writes, with `GH_TOKEN` in the environment and network egress for NuGet. The real boundary
+  is then (a) no Azure credential in the container, which holds, and (b) what `GH_TOKEN` can
+  do. Expect me to argue that (b) is enough for the POC and that an egress allowlist is a
+  product-time concern — but it is your call.
+- **Which app repo the run targets.** `aaas-app-demo` (existing, has history, will produce a
+  deployment PR the gate may turn red because of `43d8be2` — see STATUS) or a fresh repo from
+  the template (tests the onboarding surface, OQ-15, which is out of scope).
+- **Whether 4c is one job or two runs.** POC-PLAN says one job chaining both runbooks. Two
+  separate runs is simpler and gives the same timing data. Expect me to propose two runs first.
 
 ## Done when
 
-- A deploy whose migration fails against live data turns the pipeline red.
-- The failure names the cause, from the init container's own log.
-- `app_url` is visible without opening the Actions log or the portal.
-- `AaaS-context.md` §7 has the outcome and D-22 is either satisfied or amended.
+- The harness image has a .NET SDK and `verify-isolation` still passes.
+- The policy allows the runbook's `dotnet` commands and refuses the rest, with tests.
+- One agent run produces a merged app PR, and the chain reaches a green readiness gate.
+- Prompt-to-running-app time is written into `FINDINGS.md`, with the cost per run.
 
 ## Explicitly not this session
 
-- Phase 4c and the harness's missing .NET SDK. It is next, not now.
-- Anything commercial — parked under D-19.
-- Revisiting Azure, or the .NET decision (D-20). Closed.
+- OQ-21 (immutable once *applied*) — real, but revert works as recovery today.
+- Teardown reliability (finding 18) — its own piece of work.
+- OQ-15 (automated repo onboarding), anything commercial (D-19), revisiting Azure or .NET.
 
 ## Carried over
 
-- **OQ-21 — "immutable once merged" is the wrong rule.** The guard blocks fixing forward a
-  migration that was merged but never applied, which is exactly the state finding 16 produced.
-  Needs the pipeline to know what each estate has applied (same missing fact as OQ-16).
-- **Phase 4c needs a .NET SDK in the harness image** and a policy that allows `dotnet`.
-  `create-app.md` is committed and says so at the top.
+- **OQ-21 — "immutable once merged" is the wrong rule.** Unchanged by the gate: it made the
+  failure visible, not fixable forward.
+- **Teardown is not reliable (finding 18).** Untested since. The next destroy is a data point.
 - **`gh pr close` is refused by the policy** while `PROMPT.md` only forbids merging.
-- **Teardown is not reliable (finding 18).** Destroy hung on three Postgres child resources for
-  30+ minutes and failed on OIDC renewal, twice; recovery was `az group delete`. Related to the
-  readiness gate only in kind — both are "the pipeline reports the wrong layer" — but it is its
-  own piece of work, and it decides whether `destroy.yml` is safe to hand to anyone.
 - **`.terraform.lock.hcl` does not exist.** Provider versions can drift between runs.
-- **Offer to turn this hand-off into a skill**, so preparing it does not depend on remembering.
+- **Log Analytics revision filter returned another run's output** (finding 19, point 2).
+  Unexplained; the gate works around it.
+- **`verify-isolation` cannot see token permissions.** Asserting "no Workflows permission" on
+  `GH_TOKEN` would make finding 19's boundary checked rather than assumed.

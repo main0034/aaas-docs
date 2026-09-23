@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 22 September 2026, at the end of the OQ-13 / .NET session. Start here in a new conversation.
+Written 23 September 2026, at the end of the D-22 readiness-gate session. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -28,6 +28,7 @@ Written 22 September 2026, at the end of the OQ-13 / .NET session. Start here in
 - **.NET 10 scaffold (D-20)** — template and demo both on ASP.NET Core minimal APIs, EF Core, xUnit v3; CI adds a format check, warnings-as-errors, a model-vs-migration check and two migration guards
 - **Schema migrations (D-21)** — EF Core migrations applied by a `migrate` init container (`app-stack` v0.3.0), proven in Azure on create and on update, with the identity token working in the init container
 - **A failing migration is safe** — one transaction, rolled back whole, old revision keeps serving, data untouched (finding 16)
+- **Post-apply readiness gate (D-22)** — every apply is followed by `scripts/readiness_gate.sh`, which asks Container Apps whether the new revision is running, not the app. Proven red on a live-data migration failure (cause posted on the PR), green on create and on the revert that recovered it (finding 19). A green deploy now means the application runs
 
 Verified working: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260922174809_AddItemPriority"}`
 
@@ -44,16 +45,13 @@ Verified working: `GET /ready` → `{"database":"ok","auth":"managed-identity","
 
 ## Next step
 
-OQ-13 is closed (D-21). The deploy loop now has a hole worth more than any new feature:
+**Phase 4c** — make `agent/create-app.md` runnable: a .NET SDK in the harness image and a
+policy that allows `dotnet`, then one run end to end. See `NEXT-SESSION.md`. After that:
 
-1. **Post-apply readiness gate (D-22).** A green apply is not evidence the app runs — proven in
-   finding 16. The gate forces a replica, waits, and asserts `/ready` reports the expected
-   migration; it also has to surface `app_url` and, on failure, the init container's log from
-   Log Analytics (OQ-22).
-2. **OQ-21 — "immutable once applied", not "once merged".** Today a merged-but-never-applied
-   migration cannot be fixed forward without a human override.
-3. **Phase 4c — the harness needs a .NET SDK and a policy that allows `dotnet`**, or
-   `create-app.md` cannot be run at all.
+- **OQ-21 — "immutable once applied", not "once merged".** Still true: fixing forward a
+  merged-but-never-applied migration needs a human override. The gate made the failure visible;
+  it did not make it fixable forward. Revert is the recovery that works today.
+- **Teardown reliability (finding 18)** before `destroy.yml` is handed to anyone.
 
 Running the agent again, for reference:
 
@@ -86,23 +84,17 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: destroyed** (22 September, after the create/update/failure tests). `deployments/dev/demo/` still exists in git, so any push touching `deployments/**` will recreate the whole stack (~15 minutes, ~$20/month). Deliberate — teardown is a pause, not a deletion.
+- **Infrastructure: RUNNING** since 23 September (`rg-demo-dev`, image `a708ec8`, three test rows,
+  two sharing a title). ~$20/month until destroyed. `deployments/dev/demo/` pins `a708ec8`;
+  `aaas-app-demo/master` is at `43d8be2`, whose migration fails against these rows — so the next
+  image release from the demo will open a deployment PR that the gate turns red. That is correct
+  behaviour, not a bug.
 - Repos are public (needed for branch protection on the free plan)
 - GHCR package `aaas-app-demo` is public, so `registry_username` is `""`
-- Module is at tag `v0.2.0`
-- **`aaas-agent/` is a local git repo with no remote.** Deliberate for now, but it is the only
-  part of the estate with no off-machine copy, so the harness exists in exactly one place.
-  Nothing in the pipeline fetches it - the Dockerfile copies `harness/` in from the local
-  directory at build time - so this costs nothing functionally and everything if the laptop
-  dies. When you want it up there, it is the one repo that can be private at no cost: nothing
-  gates it, so it needs none of the branch protection the others were made public for.
-
-  ```bash
-  gh repo create aaas-agent --private --source=. --remote=origin --push
-  ```
-- **Uncommitted, on purpose:** `aaas-deployments/agent/create-app.md` (on hold until OQ-13 -
-  it instructs the agent to use versioned migrations that do not exist) and
-  `aaas-deployments/.gitignore` (safe to push or PR whenever)
+- Module is at tag `v0.3.0`, pinned by `deployments/dev/demo/main.tf`
+- `aaas-agent` has a remote (`main0034/aaas-agent`)
+- Merged test branches left on `aaas-deployments`: `test/gate-baseline`, `test/gate-unique`,
+  `revert/unique-title`. Safe to delete.
 
 ## Things to remember
 
@@ -111,6 +103,8 @@ trusting the wrong layer.
 - **Don't cancel a Terraform job.** It leaves the state lease held. `unlock.yml` recovers it.
 - **Plan runs with `-refresh=false`** because the azurerm provider calls `listSecrets` on every Container App read. Don't remove it without reading finding 11.
 - **Test update, not just create.** Three real bugs survived a green first apply and only appeared on the second deploy.
+- **A red readiness gate means the old version is still serving.** Recover with a revert PR on the deployment, not by editing the migration (OQ-21). The PR comment names the cause.
+- **A PR-scoped token cannot push `.github/workflows/`** without the Workflows permission — keep it that way for anything an agent holds (finding 19).
 
 ## Open product questions, still parked
 

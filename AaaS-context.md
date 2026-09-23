@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
-**Status:** v1 platform decided · POC pipeline working · agent produces infrastructure PRs · .NET scaffold with migrations proven in Azure  
-**Owner:** Martin Ingeson · **Last updated:** 2026-09-22 (v0.7)
+**Status:** v1 platform decided · POC pipeline working · agent produces infrastructure PRs · .NET scaffold with migrations proven in Azure · deploys gated on the app actually running  
+**Owner:** Martin Ingeson · **Last updated:** 2026-09-23 (v0.8)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -24,7 +24,9 @@ this one stays at product level.
 **Proven end to end.** A pull request produces a schema-validated Terraform plan; merging
 applies it; the result is a reachable HTTPS application talking to a Postgres server with no
 public endpoint and no password. The cross-repo image handoff works for both create and
-update.
+update. Since 2026-09-23 a green deploy means the new revision is actually running: a
+readiness gate after the apply turns the pipeline red when it is not, and names the cause on
+the deployment PR (D-22).
 
 **Not proven.** The agent writing an application. It produces infrastructure PRs (Phase 4a,
 4m 11s prompt-to-PR); application code generation has not been run, so prompt-to-running-app
@@ -360,7 +362,7 @@ loop. See OQ-4 and OQ-5 — this is the topic for the next session.
 | D-18 | Agent runtime: Claude Agent SDK, containerised, no cloud credential in reach | 2026-09-20 | Wraps an existing engine per D-9. A command allowlist is not a boundary; credential absence is. Settles the runtime, not the hosting — OQ-4 remains open |
 | D-20 | App scaffold: **C# / .NET 10**, minimal APIs, EF Core + Npgsql, xUnit v3. One language, not a default among several | 2026-09-21 | Compiler as a free deterministic gate; first-class Entra token support in Npgsql + Azure.Identity; a mature migration tool that works over the app's own tokenised connection (see D-21); code a Swedish SMB's Microsoft partner can maintain, which strengthens handover (OQ-3) and the Power Platform counter-argument. Agent support is not a differentiator either way. Cost: re-proving the image handoff with a new template. Python template retired rather than kept as an option |
 | D-21 | Migrations: **EF Core, run in a `migrate` init container**, immutable once merged, expand-only, CI-enforced | 2026-09-21 | Resolves OQ-13. CI cannot reach the private database (D-15) and holds no DB rights; running in the app process would break the health contract; a Container Apps Job needs `local-exec` ordering. The init container orders migrate-before-start per revision for free, and Single revision mode keeps the old revision serving if it fails. Requires a workload-profile Consumption environment — the only kind where init containers get the managed identity. `app-stack` v0.3.0 |
-| D-22 | **A successful `terraform apply` is not evidence that a deployment works.** Deploys need a post-apply readiness gate | 2026-09-22 | Proven, not theorised: a migration that fails only against live data produced a green apply, a revision in `ActivationFailed` holding 100% of the traffic, and an app that kept serving the old version. At `min_replicas = 0` nothing starts at apply time, so nothing fails. The gate must force a replica, wait, and assert `/ready` reports the expected migration. Not yet built — it is the next piece of work (finding 16) |
+| D-22 | **A successful `terraform apply` is not evidence that a deployment works.** Every apply, including the first, is followed by a readiness gate that asks the *platform* whether the new revision runs: it forces a replica, then requires `runningState = Running` and `latestReadyRevisionName` = the new revision, then `/ready` → `database: ok`. On failure the pipeline goes red, the init container's `[migrate] FAILED:` line is fetched from Log Analytics onto the deployment PR, and nothing rolls back automatically — the old revision keeps serving and recovery is a revert PR | 2026-09-23 | Amended from 2026-09-22, which had the gate assert `/ready` reports the expected migration. That cannot work: after a failed deploy the *old* revision answers, and it has nothing pending. Proven on 23 September (finding 19): red on a live-data migration failure 6 minutes after the apply finished, cause included; green on create (11s) and on the revert (37s). Fail-and-stop because an automatic rollback would change Azure outside git (D-5) |
 | D-19 | **This is a build-to-learn exercise, not a business in formation** | 2026-09-20 | Stated preference: play with the technology rather than settle the commercial model. The commercial and go-to-market open questions are parked rather than deleted, so the build proceeds without them blocking and the thinking is not lost. Revisit when there is something worth selling |
 
 ---
@@ -438,12 +440,12 @@ commercial and start being legal.
   the moment an application is broken. The rule should be "immutable once **applied**", which
   requires the pipeline to know what each estate has actually applied. That is the same missing
   fact as OQ-16 (version visibility), reached from the other direction.
-- **OQ-22 — What the deploy reports, and to whom.** `app_url` is produced by the apply and
-  discarded; a failed init container is visible only by querying Log Analytics directly, because
-  `az containerapp logs show --container migrate` cannot find it; and the traffic weight shows
-  100% pointed at a revision that never ran. The readiness gate (D-22) has to fetch the URL and
-  read the init container's log anyway, so this is one piece of work, not three. What a
-  non-technical user is told when it fails is the open part.
+- **OQ-22 — What a non-technical user is told when a deploy fails.** The pipeline half is done
+  (D-22): the deployment PR carries the URL on success, and on failure the reason and the
+  init container's own error line. Still open: the §2 persona reads neither a PR nor
+  `23505: could not create unique index`. Someone has to translate "your two items called
+  X share a name" and decide who opens the revert — us, automatically, or the customer by
+  pressing something. Interacts with OQ-5.
 - **OQ-14 — Operations that fail unrecoverably.** **Second instance, 2026-09-22 (finding 18):**
   teardown hung for 30+ minutes on three Postgres child resources and then failed reporting an
   OIDC renewal error, twice in a row. Recovery was a manual `az group delete` plus a third run to

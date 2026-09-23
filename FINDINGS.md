@@ -400,6 +400,11 @@ application means opening the Actions log or the Azure portal — both closed to
 and both awkward for us. The deployment PR is the natural place to post it, and the readiness
 gate in D-22 has to fetch the URL anyway.
 
+**Correction, 23 September: this finding was wrong as written.** `apply.yml` already posted
+`app_url` as a comment on the merged deployment PR (#9 and #10 both have it). What was missing
+was any report at all when a deploy *failed*. The readiness gate now comments on both outcomes
+(finding 19). The §2 point stands: a PR comment is still not somewhere the customer looks.
+
 ## 18. Teardown outlived its credential — twice, identically
 
 Destroying the stack on 22 September failed, and re-running it failed the same way. Both runs
@@ -440,11 +445,57 @@ gone, or the server having a pending operation from the failed revision. Deletin
 group succeeded immediately, so whatever it is lives in the per-resource delete path, not in
 Azure's ability to remove the resources.
 
+## 19. The readiness gate works — by asking the platform, not the app
+
+D-22 as first written had the gate poll `/ready` until it reported the migration the release
+expected. That cannot catch finding 16: after a failed deploy the request is answered by the
+**old** revision, which has nothing pending and reports the old migration as current. Anything
+the app says about itself describes whichever revision is serving. The gate
+(`aaas-deployments/scripts/readiness_gate.sh`) asks Container Apps instead: send requests until a
+replica starts, then require the new revision's `runningState = Running` **and**
+`latestReadyRevisionName` = that revision, and only then `/ready` → `database: ok`. No change to
+the app, the image or the module, and no need for the pipeline to know any migration ID.
+
+Proven on 23 September, three deploys, same stack:
+
+| PR | Change | Gate | Observed |
+|---|---|---|---|
+| #11 | create at `a708ec8` | **green**, 11s | `Running`/`Healthy` on the first check |
+| #12 | `43d8be2` (unique index) over two rows titled `Same title` | **red** | `Activating` for **293s**, then `ActivationFailed`, replicas 0. PR comment named `[migrate] FAILED: 23505: could not create unique index "IX_items_title"` about a minute later. Old revision served throughout; data intact |
+| #13 | revert to `a708ec8` | **green**, 37s | `Activating` 20s, `Running` at 33s |
+
+What it taught:
+
+1. **A failing init container is retried for about five minutes** before the revision is
+   declared `ActivationFailed` (platform events show `migrate` exiting 1 more than once). A gate
+   with a shorter timeout still goes red, but reports "timed out" instead of the cause. The
+   default is now 600s. Red therefore arrives about six minutes after the apply, which is
+   acceptable only because the old revision keeps serving meanwhile.
+2. **Log Analytics filtered by `RevisionName_s` returned another run's output too**: a successful
+   migrate ("1 pending: AddItemPriority … schema is current") alongside the failure, with
+   stack-trace lines that share a timestamp interleaved. Unexplained. The first PR comment
+   therefore read as if the migration passed and failed at once. The PR now gets only the
+   runner's own `[migrate]` lines plus platform events; the raw rows stay in the Actions log.
+   This is the second time the one legible line had to be dug out of noise on purpose — the
+   runner printing a single `FAILED:` first line (D-21) is what made it possible.
+3. **Revision names are not a sequence.** The create produced `ca-demo-dev--o95wr7a`; the
+   updates were `--0000001` and `--0000002`. Read `latestRevisionName`, never derive it.
+4. **Recovery by revert is uneventful.** A deploy after an `ActivationFailed` revision behaves
+   like any other. The migration had rolled back whole, so the old image met the schema it
+   expected. That is what makes fail-and-stop plus a revert PR a complete rollback — for
+   expand-only migrations (D-21). A migration that half-applied would break this.
+5. **A fine-grained token without the Workflows permission cannot push to `.github/workflows/`**
+   — GitHub refuses server-side. This session's token (Contents + Pull requests, one repo)
+   could push deployment changes and the gate script but not `apply.yml`. That is exactly the
+   boundary the agent's `GH_TOKEN` should have: deterministic, enforced by GitHub, not by our
+   allowlist (D-17). Worth asserting in `verify-isolation`, which cannot currently see token
+   permissions.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
 - **How long prompt-to-running-app takes.** Half answered: prompt-to-PR is **4m 11s** (finding 14). Prompt-to-*running* is still unknown, because PR #7 was deliberately not merged — Phase 4a ends at a green plan.
 - Whether teardown is clean
-- ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it is not, at `min_replicas = 0`.
+- ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it was not, at `min_replicas = 0`. Since finding 19 it is, by the readiness gate.
 - **The escape hatch:** touched, not answered (finding 14). We now know the agent refuses gracefully and explains itself when a request exceeds the module. We still do not know what the *product* does at that moment, which remains the hardest question in the idea.
 - **What agent cost looks like at scale** (finding 14, OQ-18). One run is $0.65 of shadow API cost, dominated by context rather than output, and a follow-up question costs about as much as the original work. Untested: whether trimming the carried context after the tfvars is written materially changes that.
