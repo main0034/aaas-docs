@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
 **Status:** v1 platform decided · POC pipeline working · agent produces infrastructure PRs · .NET scaffold with migrations proven in Azure · deploys gated on the app actually running  
-**Owner:** Martin Ingeson · **Last updated:** 2026-09-23 (v0.8)
+**Owner:** Martin Ingeson · **Last updated:** 2026-09-24 (v0.9)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -446,7 +446,12 @@ commercial and start being legal.
   `23505: could not create unique index`. Someone has to translate "your two items called
   X share a name" and decide who opens the revert — us, automatically, or the customer by
   pressing something. Interacts with OQ-5.
-- **OQ-14 — Operations that fail unrecoverably.** **Second instance, 2026-09-22 (finding 18):**
+- **OQ-14 — Operations that fail unrecoverably.** **Update, 2026-09-24 (finding 20):** the teardown
+  hang is sidestepped - `destroy.yml` drops the Postgres child resources from state and deletes
+  the server directly - but the evening that took exposed the general form of this question: a
+  destroy reported success in 18 seconds while the entire stack still existed, because
+  Terraform's state and Azure disagreed. Every pipeline operation needs a check against Azure
+  afterwards, not just Terraform's report (the readiness gate is that check for apply). **Second instance, 2026-09-22 (finding 18):**
   teardown hung for 30+ minutes on three Postgres child resources and then failed reporting an
   OIDC renewal error, twice in a row. Recovery was a manual `az group delete` plus a third run to
   empty the state. Two distinct failures now share a shape — the pipeline reports the layer that

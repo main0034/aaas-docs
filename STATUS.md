@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 23 September 2026, at the end of the D-22 readiness-gate session. Start here in a new conversation.
+Written 24 September 2026, at the end of the D-22 readiness-gate session (which also fixed the teardown hang). Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -29,6 +29,7 @@ Written 23 September 2026, at the end of the D-22 readiness-gate session. Start 
 - **Schema migrations (D-21)** — EF Core migrations applied by a `migrate` init container (`app-stack` v0.3.0), proven in Azure on create and on update, with the identity token working in the init container
 - **A failing migration is safe** — one transaction, rolled back whole, old revision keeps serving, data untouched (finding 16)
 - **Post-apply readiness gate (D-22)** — every apply is followed by `scripts/readiness_gate.sh`, which asks Container Apps whether the new revision is running, not the app. Proven red on a live-data migration failure (cause posted on the PR), green on create and on the revert that recovered it (finding 19). A green deploy now means the application runs
+- **Teardown no longer hangs on Postgres child resources** — `destroy.yml` drops them from state first and deletes the server directly; a full destroy succeeded in 25 minutes (finding 20). It still does not verify that anything was removed
 
 Verified working: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260922174809_AddItemPriority"}`
 
@@ -51,7 +52,7 @@ policy that allows `dotnet`, then one run end to end. See `NEXT-SESSION.md`. Aft
 - **OQ-21 — "immutable once applied", not "once merged".** Still true: fixing forward a
   merged-but-never-applied migration needs a human override. The gate made the failure visible;
   it did not make it fixable forward. Revert is the recovery that works today.
-- **Teardown reliability (finding 18)** before `destroy.yml` is handed to anyone.
+- **Post-destroy assertion** — `az group exists` must be `false` after a destroy, or the run fails. A destroy went green in 18s while the whole stack still existed (finding 20). About five lines.
 
 Running the agent again, for reference:
 
@@ -84,11 +85,11 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: RUNNING** since 23 September (`rg-demo-dev`, image `a708ec8`, three test rows,
-  two sharing a title). ~$20/month until destroyed. `deployments/dev/demo/` pins `a708ec8`;
-  `aaas-app-demo/master` is at `43d8be2`, whose migration fails against these rows — so the next
-  image release from the demo will open a deployment PR that the gate turns red. That is correct
-  behaviour, not a bug.
+- **Infrastructure: destroyed** (24 September, by `destroy.yml` with the state-rm fix, after a
+  manual `az group delete` cleaned up the 23 September mess). `deployments/dev/demo/` pins
+  `a708ec8`; any push touching `deployments/**` recreates the stack (~9 minutes, ~$20/month).
+  `aaas-app-demo/master` is at `43d8be2`, whose migration fails only against duplicate titles -
+  on an empty database it applies cleanly.
 - Repos are public (needed for branch protection on the free plan)
 - GHCR package `aaas-app-demo` is public, so `registry_username` is `""`
 - Module is at tag `v0.3.0`, pinned by `deployments/dev/demo/main.tf`
@@ -104,6 +105,8 @@ trusting the wrong layer.
 - **Plan runs with `-refresh=false`** because the azurerm provider calls `listSecrets` on every Container App read. Don't remove it without reading finding 11.
 - **Test update, not just create.** Three real bugs survived a green first apply and only appeared on the second deploy.
 - **A red readiness gate means the old version is still serving.** Recover with a revert PR on the deployment, not by editing the migration (OQ-21). The PR comment names the cause.
+- **After a failed destroy, destroy again — never apply first.** The destroy drops the Postgres child resources from state; an apply would try to recreate them and fail on the database (finding 20).
+- **Never use `az group delete --no-wait` while pipeline jobs may run.** Wait until `az group exists -n <rg>` prints `false`.
 - **A PR-scoped token cannot push `.github/workflows/`** without the Workflows permission — keep it that way for anything an agent holds (finding 19).
 
 ## Open product questions, still parked

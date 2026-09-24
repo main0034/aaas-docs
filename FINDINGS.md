@@ -491,11 +491,43 @@ What it taught:
    allowlist (D-17). Worth asserting in `verify-isolation`, which cannot currently see token
    permissions.
 
+## 20. Teardown: the child-resource hang is gone; a green destroy can still be a lie
+
+Finding 18 happened a third time on 23 September: `destroy` sat in `terraform destroy` for 23
+minutes and failed. The cause is now clear enough to act on without being proven. The Postgres
+server's three child resources (database, Entra administrator, `require_secure_transport`) have
+no dependents, so Terraform deletes them first and **in parallel** against a server that takes
+one management operation at a time; the server, network, DNS and resource group all wait behind
+them. Deleting the resource group, which removes the server whole, took seconds. None of the
+three deletions does anything useful.
+
+**Fix** (`destroy.yml`): before `terraform destroy`, `terraform state rm` every resource of those
+three types, so Terraform deletes the server directly. Tested 24 September on a fresh stack:
+state step 18s, `terraform destroy` **success in 24m57s**, no hang, no OIDC error.
+**Still slow:** 25 minutes is close to where the earlier runs died on token renewal. Which
+resource took the time is unknown (the job log needs repo admin to read). If the next destroy
+fails the same way, the server delete itself is the slow part, not its children.
+
+Getting there cost an evening, and taught three things that generalise:
+
+1. **A destroy can go green while everything still exists.** After the hung run, a cleanup
+   destroy "succeeded" in **18 seconds**. Terraform's state no longer listed the server, so it
+   deleted nothing, while `psql-demo-dev-e9fdbf` sat in Azure unchanged. Same shape as finding
+   16 in the other direction: the pipeline reports what Terraform did, not what Azure holds.
+   Needs a post-destroy assertion (`az group exists` must be `false`), not built yet.
+2. **`az group delete --no-wait` returns before anything is deleted.** An apply started 90
+   seconds after one wrote into a resource group Azure was halfway through deleting, and failed
+   with `appdb ... already exists - needs to be imported`. Never run a pipeline job against a
+   resource group in `Deleting`; wait for `az group exists` to print `false`.
+3. **The state-rm fix has a failure mode.** If a destroy fails *after* the three are dropped from
+   state, the next **apply** tries to create them, and the database create refuses because
+   `appdb` exists. Recover with another destroy, never an apply. Written into `destroy.yml`.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
 - **How long prompt-to-running-app takes.** Half answered: prompt-to-PR is **4m 11s** (finding 14). Prompt-to-*running* is still unknown, because PR #7 was deliberately not merged — Phase 4a ends at a green plan.
-- Whether teardown is clean
+- Whether teardown is clean — partly (finding 20): the child-resource hang is fixed, but a destroy takes ~25 minutes and nothing verifies that it removed anything.
 - ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it was not, at `min_replicas = 0`. Since finding 19 it is, by the readiness gate.
 - **The escape hatch:** touched, not answered (finding 14). We now know the agent refuses gracefully and explains itself when a request exceeds the module. We still do not know what the *product* does at that moment, which remains the hardest question in the idea.
 - **What agent cost looks like at scale** (finding 14, OQ-18). One run is $0.65 of shadow API cost, dominated by context rather than output, and a follow-up question costs about as much as the original work. Untested: whether trimming the carried context after the tfvars is written materially changes that.

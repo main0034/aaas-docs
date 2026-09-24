@@ -1,6 +1,6 @@
 # Next session
 
-Written 23 September 2026 at the end of the D-22 readiness-gate session. Replaced wholesale at
+Written 24 September 2026 at the end of the D-22 readiness-gate session. Replaced wholesale at
 the end of every session — this file is intent, not history. What actually happened lives in
 `FINDINGS.md`, where things stand lives in `STATUS.md`.
 
@@ -36,15 +36,15 @@ Phase 5 (fix-forward) and Phase 7 (code generation) both sit on top of this.
 
 Don't trust this file on any of these — check:
 
-- **Is infrastructure still running?** It was left up on 23 September (`rg-demo-dev`, image
-  `a708ec8`, ~$20/month). If it is, decide whether to keep it for this session's end-to-end run
-  or destroy it and let the run recreate it.
-- Are `aaas-docs` and `aaas-deployments` pushed? (Docs were committed but not pushed at the end
-  of the last session.)
+- **Is infrastructure destroyed?** It was destroyed on 24 September. Check the latest `destroy`
+  run and, if you can, `az group exists -n rg-demo-dev` - a green destroy has lied before
+  (finding 20). This session's end-to-end run will recreate the stack (~9 minutes).
+- Is everything pushed? `aaas-deployments` had one commit left locally at the end of the last
+  session (a comment in `destroy.yml`).
 - Is `aaas-app-demo` local checkout still on the stale `test/unique-title` branch with an
   uncommitted `http/items.http` edit? Origin's `master` is `43d8be2`.
 - Does `aaas-agent` build and pass its tests as it stands, before anything is changed?
-- Is the `.session-token` file in `aaas/` gone and the token revoked?
+- Was last session's GitHub token revoked? (The file is gone.)
 
 ## The work
 
@@ -85,14 +85,16 @@ Don't trust this file on any of these — check:
 ## Explicitly not this session
 
 - OQ-21 (immutable once *applied*) — real, but revert works as recovery today.
-- Teardown reliability (finding 18) — its own piece of work.
+- The post-destroy assertion (finding 20) — small, but its own piece of work.
 - OQ-15 (automated repo onboarding), anything commercial (D-19), revisiting Azure or .NET.
 
 ## Carried over
 
 - **OQ-21 — "immutable once merged" is the wrong rule.** Unchanged by the gate: it made the
   failure visible, not fixable forward.
-- **Teardown is not reliable (finding 18).** Untested since. The next destroy is a data point.
+- **A green destroy is not evidence the stack is gone (finding 20).** Add `az group exists` must
+  be `false` after `terraform destroy`. The child-resource hang is fixed, but a full destroy
+  still took 25 minutes - close to where earlier runs died on OIDC renewal.
 - **`gh pr close` is refused by the policy** while `PROMPT.md` only forbids merging.
 - **`.terraform.lock.hcl` does not exist.** Provider versions can drift between runs.
 - **Log Analytics revision filter returned another run's output** (finding 19, point 2).
