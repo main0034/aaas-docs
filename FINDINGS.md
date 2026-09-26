@@ -523,10 +523,123 @@ Getting there cost an evening, and taught three things that generalise:
    state, the next **apply** tries to create them, and the database create refuses because
    `appdb` exists. Recover with another destroy, never an apply. Written into `destroy.yml`.
 
+## 21. Prompt to running app: 18m 43s on create, 8m 23s on update
+
+26 September 2026, Phase 4c. The agent wrote application code for the first time and it reached
+Azure through the whole chain: prompt → app PR → CI → merge → image → deployment PR → plan →
+merge → apply → readiness gate green. Two runs against `aaas-app-demo`, both from the harness
+container on a laptop, both with `--non-interactive`, and no human edits to any code. The model
+was the CLI default (the commit trailers say Sonnet 4.6).
+
+| | Run 1 - create | Run 2 - update |
+|---|---|---|
+| Run id | `20260926T142507Z` | `20260926T144922Z` |
+| Brief | `item-done.md`: tick items off, filter to open ones | `item-open-fix.md`: open items go missing past 100 |
+| Agent: prompt → PR | **4m 11s**, 55 turns | **2m 43s**, 27 turns |
+| Cost (shadow) | **$0.90** | **$0.43** |
+| Policy refusals | 3 | **0** |
+| Tool calls | 26 Bash, 9 Read, 9 TodoWrite, 6 Edit, 3 Write | 12 Bash, 8 Read, 3 Write, 2 Edit, 1 Glob |
+| App CI | 1m 16s, green first push (PR #4) | green first push (PR #5); merged after 1m 28s, **before `build` finished** - see below |
+| Release → deployment PR | 58s (#14) | 57s (#15) |
+| Plan on deployment PR | 1m 30s | ~1m 30s |
+| `terraform apply` | 8m 30s - **full create**, the stack had been destroyed | **49s** - image bump only |
+| Readiness gate | 12s | 39s |
+| Operator merges (me) | ~1m 40s | ~20s |
+| **Prompt → running** | **18m 43s** | **8m 23s** |
+
+Run 1 added a `MarkItemDone` migration (`is_done boolean not null default false`, `done_at`
+nullable) - expand-only without being told twice. `/ready` reported it live; marking an item done
+and `GET /items?open=true` worked against the deployed app. The data written after run 1 survived
+run 2's deploy.
+
+**The number that matters is the update: ~8 minutes, of which the agent is a third and Azure one
+minute.** The rest is CI and two merges that were a human (me, via the API) reacting to a green
+check. The create case is dominated by provisioning Postgres and is paid once per estate. For a
+non-technical user, eight minutes from "open items go missing" to fixed is a plausible product
+loop; the remaining time is the pipeline, not the model.
+
+### The harness made the agent solve an auth problem, and it solved it the wrong way
+
+`gh repo clone` authenticates the clone and nothing after it. The checkout had no credential
+helper, so the runbook's `git push` failed with `could not read Username`. The agent spent five
+turns on it (`git remote -v`, `gh auth status`, `gh repo set-default` - refused, `git config
+--global credential.helper` - refused) and then pushed to
+`https://main0034:${GH_TOKEN}@github.com/...`. The policy allowed that: `${VAR}` is expansion, not
+command substitution, so neither regex saw it. Nothing leaked - the transcript holds the variable
+name, and `gh auth status` masks the token - but the token went into git's argument list, and the
+agent's own conclusion was to route around an authentication failure.
+
+In 4a the push worked. The deployments clone must have been pushed some other way that run; this
+was not investigated because the fix is the same either way.
+
+**Fixed in the harness, not the agent** (`aaas-agent` `23f6fd4`): every checkout gets
+`!gh auth git-credential` as its credential helper, and the policy refuses any reference to
+`GH_TOKEN` or `gh auth token`, telling the agent to stop and report an auth failure instead.
+`create-app.md` says the same. Run 2 pushed first time.
+
+### The second heredoc
+
+Refusal two was `git commit -m "$(cat <<'EOF' ...)"` - the same shape as finding 14's PR body,
+because the runbook said `git commit -m "..."` and a multi-line message with a co-author trailer
+is what the model reaches for. The runbook now says `git commit -F /tmp/commit-msg.txt`, and run 2
+used it. Both refusals in the first run were runbook or harness problems; none was the agent
+misbehaving. That is now three of four refusals across two first runs.
+
+### Green CI, wrong code
+
+Run 1's `GET /items?open=true` was `OrderByDescending(id).Take(100).Where(!IsDone)` - the filter
+after the limit, so once the latest 100 items are done the open ones vanish. CI was green: every
+test the agent wrote asserted that a route answers 503 without a database, which proves the route
+exists and nothing about what it returns. The runbook's "tests pass with no database" rule had
+been satisfied in the least useful way.
+
+`create-app.md` now says so and asks for behaviour in a testable method. Run 2 was the fix, briefed
+the way a user would report it ("open items go missing once there are a lot"). The agent diagnosed
+it correctly, moved the filter into an `IQueryable` extension and tested that against 200 in-memory
+items. **The test is still weaker than it claims:** it composes `WhereOpen().OrderBy...Take(100)`
+itself, so it would pass with the old ordering left in `Program.cs`. Testing the logic moved the
+bug's hiding place from the query to the endpoint's composition of it. What would catch it is a
+test through the endpoint against a real database - which CI's throwaway Postgres already
+provides for migrations and not for tests. Relevant to Phase 5 and to how much a green check
+should be trusted before an automatic merge (OQ-5).
+
+### `aaas-app-demo` does not require green checks to merge
+
+Run 2's PR was merged while its `build` check (image build, smoke test, migrations applied twice
+to a real Postgres) was still running - by me, through a monitoring script with a syntax error
+that fell through to the merge. `build` went green 20 seconds later, so nothing broken shipped.
+But GitHub accepted the merge: the repo has no ruleset on `master`
+(`GET /rules/branches/master` → `[]`). The deployments repo has its `gate`; the app repo, which is
+where the agent's code lands, has nothing enforcing that CI passed. The token used also has admin
+on every repo, so a ruleset would not have stopped *this* merge unless admin bypass is off.
+
+### The token
+
+One fine-grained PAT served both the agent and the operator. Probed, not assumed: pushing a file
+under `.github/workflows/` returns **403 "Resource not accessible by personal access token"**, so
+finding 19's boundary holds. But the same token has Contents write on all six repos, including
+`aaas-agent` - so for these runs the agent *could* write to the harness that constrains it, which
+the `aaas-agent` README says it cannot. Two tokens (agent: deployments + one app repo; operator:
+everything) restore the property.
+
+### Running it from a linked cloud session
+
+These runs were driven by Claude from a cloud session linked to the laptop. Three things shaped
+how, and each cost time once:
+
+- The linked shell is a Linux VM with the `aaas` folder mounted and **no Docker**; Terminal can be
+  granted to computer use in click-only mode, so commands cannot be typed into it. The build and
+  the run therefore went into one script (`phase4c.sh`, logged through `script(1)`) that Martin
+  started once per run and Claude followed from the log.
+- A Terminal tab without Docker on its `PATH` failed the first start (`docker: command not found`).
+- `git commit` from the mounted folder leaves `index.lock`, `HEAD.lock` and `tmp_obj_*` behind,
+  because the mount refuses deletes. Deletion had to be granted and the locks removed after every
+  commit, or Martin's next git command fails.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
-- **How long prompt-to-running-app takes.** Half answered: prompt-to-PR is **4m 11s** (finding 14). Prompt-to-*running* is still unknown, because PR #7 was deliberately not merged — Phase 4a ends at a green plan.
+- ~~How long prompt-to-running-app takes~~ — answered in finding 21: **8m 23s** for a change to an existing app, **18m 43s** when the stack has to be created. Not yet measured: a new app from nothing (new repo, new deployment), which needs repo provisioning (OQ-15).
 - Whether teardown is clean — partly (finding 20): the child-resource hang is fixed, but a destroy takes ~25 minutes and nothing verifies that it removed anything.
 - ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it was not, at `min_replicas = 0`. Since finding 19 it is, by the readiness gate.
 - **The escape hatch:** touched, not answered (finding 14). We now know the agent refuses gracefully and explains itself when a request exceeds the module. We still do not know what the *product* does at that moment, which remains the hardest question in the idea.

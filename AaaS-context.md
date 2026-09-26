@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
-**Status:** v1 platform decided · POC pipeline working · agent produces infrastructure PRs · .NET scaffold with migrations proven in Azure · deploys gated on the app actually running  
-**Owner:** Martin Ingeson · **Last updated:** 2026-09-24 (v0.9)
+**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running  
+**Owner:** Martin Ingeson · **Last updated:** 2026-09-26 (v0.10)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -28,9 +28,15 @@ update. Since 2026-09-23 a green deploy means the new revision is actually runni
 readiness gate after the apply turns the pipeline red when it is not, and names the cause on
 the deployment PR (D-22).
 
-**Not proven.** The agent writing an application. It produces infrastructure PRs (Phase 4a,
-4m 11s prompt-to-PR); application code generation has not been run, so prompt-to-running-app
-time is still unknown.
+**Proven on 2026-09-26 (Phase 4c).** The agent writes application code: a plain-language request
+became a migration, two endpoints and tests, through CI, image, deployment PR and readiness gate,
+with no human code edits. **Prompt → running: 8m 23s for a change to an existing app, 18m 43s
+when the stack had to be created**, of which the agent itself was 2m 43s–4m 11s and $0.43–0.90
+(shadow API cost). The rest is CI and Azure.
+
+**Not proven.** Fix-forward: both runs were green on first push, so the agent has never corrected
+a failed check. A new application from nothing (repo provisioning, OQ-15). And green is not the
+same as correct: the first run shipped a filter bug its own tests could not see.
 
 **This document drifted from the build.** The POC documents do not reference it, which is how
 five weeks of Azure-specific work happened while §9 still said "spike Scaleway first".
@@ -413,6 +419,10 @@ commercial and start being legal.
   history are held between turns.
 - **OQ-5 — Human-in-the-loop boundary.** Which changes deploy automatically and which need
   a human (customer or us). Likely: app-code changes auto, schema and infra changes gated.
+  **Evidence against trusting green (2026-09-26):** the agent's first feature passed CI with a
+  bug its tests could not see — they asserted only that routes fail without a database.
+  Auto-merge on green is only as good as the tests the agent writes, so the template and runbook
+  need to make weak tests hard to write before this can lean toward "auto".
 - **OQ-6 — Cost control.** Per-customer budget caps, what happens at the cap, how cost is
   estimated *before* apply and shown to a non-technical user.
 - **OQ-7 — Data model evolution.** Mechanism settled by D-21 (expand-only, immutable,
@@ -433,7 +443,9 @@ commercial and start being legal.
   customer talks to the product — unlike the infrastructure floor, which is fixed and
   predictable. Fix-forward loops and chatty intake sessions are the expensive cases. Needs a
   measured number before the OQ-1a tiers are set, and the first harness run is what produces
-  it (the run record reports cost per run).
+  it (the run record reports cost per run). **First numbers (2026-09-26):** $0.65 for a
+  deployment PR, $0.90 for a new feature, $0.43 for a bug fix, all single-shot. Fix-forward
+  rounds are unmeasured and are where the multiplier lives.
 - **OQ-21 — "Immutable once merged" is the wrong rule.** CI forbids editing a migration once it
   is on `master`, but the migration that failed in Azure was merged and never applied. Fixing it
   forward is therefore blocked by the guard, and recovery needs a human override — at exactly
@@ -487,7 +499,7 @@ commercial and start being legal.
 
 > **This section is stale and needs rewriting.** Items 1 and 2 are superseded by D-13; the
 > rest was written before the POC existed. The current next step is in `STATUS.md`: run the
-> agent harness once, end to end, and time it.
+> agent harness once, end to end, and time it. (Done 2026-09-26; the next step is fix-forward.)
 
 1. ~~**Golden path spike on Scaleway.**~~ Superseded by D-13.
 2. ~~**Same spike on one Nordic provider.**~~ Superseded by D-13.

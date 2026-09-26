@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 24 September 2026, at the end of the D-22 readiness-gate session (which also fixed the teardown hang). Start here in a new conversation.
+Written 26 September 2026, at the end of the Phase 4c session: the agent wrote application code and it reached Azure. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -12,7 +12,7 @@ Written 24 September 2026, at the end of the D-22 readiness-gate session (which 
 | `POC-PLAN.md` | The original plan and phase structure. |
 | `SETUP.md` | Runbook for bootstrap, secrets, and the deploy/destroy loop. |
 | `aaas-infra-modules/modules/app-stack/README.md` | The agent-facing infrastructure contract. |
-| `aaas-deployments/agent/PROMPT.md` | The agent's system prompt (written, never run). |
+| `aaas-deployments/agent/PROMPT.md` | The agent's system prompt. |
 | `aaas-agent/README.md` | The harness: how to run it, and what the boundary actually is. |
 | `aaas-app-template/AGENT.md` | Conventions for application code. |
 
@@ -31,37 +31,42 @@ Written 24 September 2026, at the end of the D-22 readiness-gate session (which 
 - **Post-apply readiness gate (D-22)** — every apply is followed by `scripts/readiness_gate.sh`, which asks Container Apps whether the new revision is running, not the app. Proven red on a live-data migration failure (cause posted on the PR), green on create and on the revert that recovered it (finding 19). A green deploy now means the application runs
 - **Teardown no longer hangs on Postgres child resources** — `destroy.yml` drops them from state first and deletes the server directly; a full destroy succeeded in 25 minutes (finding 20). It still does not verify that anything was removed
 
-Verified working: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260922174809_AddItemPriority"}`
+- **Phase 4c — the agent writes the application.** Harness image has the .NET SDK (10.0.401); the policy allows the runbook's `dotnet` commands and refuses the rest; `--task create-app --app-repo <name>`. Two runs against `aaas-app-demo` (finding 21): **prompt → running app in 8m 23s for an update, 18m 43s when the stack had to be created.** Agent cost $0.43–0.90 (shadow) per run. CI green on first push both times; the second run had zero policy refusals
 
+Verified working: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260926142702_MarkItemDone"}`
 
-## Written, not yet run
-
-- **`agent/create-app.md`** — rewritten for .NET and committed. Not runnable yet: the harness image has no .NET SDK and its policy allows only `git`, `gh`, `jq` and the schema validator. Making it runnable is the first step of Phase 4c.
 
 ## Not started
 
-- **Phase 4c** — chaining both tasks in one job
+- **A new app from nothing** — new repo + first deployment + first app PR. Blocked on repo provisioning (OQ-15), deliberately out of scope so far
 - **Phase 5** — fix-forward
 - **Phase 7** — application code generation
 
 ## Next step
 
-**Phase 4c** — make `agent/create-app.md` runnable: a .NET SDK in the harness image and a
-policy that allows `dotnet`, then one run end to end. See `NEXT-SESSION.md`. After that:
+**Phase 5 — fix-forward.** The agent reads a failed check and corrects its own PR. See
+`NEXT-SESSION.md`. Two cheap prerequisites Martin does in the GitHub UI first: a ruleset on
+`aaas-app-demo` `master` requiring the `test` and `build` checks, and a separate agent token
+(finding 21). After that:
 
 - **OQ-21 — "immutable once applied", not "once merged".** Still true: fixing forward a
-  merged-but-never-applied migration needs a human override. The gate made the failure visible;
-  it did not make it fixable forward. Revert is the recovery that works today.
-- **Post-destroy assertion** — `az group exists` must be `false` after a destroy, or the run fails. A destroy went green in 18s while the whole stack still existed (finding 20). About five lines.
+  merged-but-never-applied migration needs a human override. Revert is the recovery that works today.
+- **Post-destroy assertion** — `az group exists` must be `false` after a destroy, or the run fails (finding 20). About five lines.
 
 Running the agent again, for reference:
 
 ```bash
 cd aaas-agent
 export CLAUDE_CODE_OAUTH_TOKEN=...   # claude setup-token, one year, no API billing
-export GH_TOKEN=...                  # fine-grained PAT, aaas-deployments only
-./run.sh --request @briefs/room-booking.md
+export GH_TOKEN=...                  # fine-grained PAT: deployments + the app repo, never Workflows
+./run.sh --request @briefs/room-booking.md                        # create-deployment
+./run.sh --task create-app --app-repo aaas-app-demo \
+         --request @briefs/item-done.md --non-interactive          # create-app
 ```
+
+From a linked cloud session, Claude cannot type into Terminal (click-only) and the linked
+shell has no Docker: the run goes in a script Martin starts once, logged through `script(1)`
+(finding 21). `phase4c.sh` in the `aaas` folder is that script.
 
 `runs/<id>/report.md` carries the wall clock, the tool histogram, the cost
 breakdown and every policy refusal. Read the refusals: a refusal that recurs is
@@ -85,17 +90,18 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: destroyed** (24 September, by `destroy.yml` with the state-rm fix, after a
-  manual `az group delete` cleaned up the 23 September mess). `deployments/dev/demo/` pins
-  `a708ec8`; any push touching `deployments/**` recreates the stack (~9 minutes, ~$20/month).
-  `aaas-app-demo/master` is at `43d8be2`, whose migration fails only against duplicate titles -
-  on an empty database it applies cleanly.
-- Repos are public (needed for branch protection on the free plan)
+- **Infrastructure: RUNNING** (recreated 26 September by deployment PR #14, updated by #15) —
+  ~$20/month, dominated by Postgres. Destroy with `destroy.yml` when it is not needed; then check
+  `az group exists -n rg-demo-dev` prints `false` (finding 20).
+  URL: `https://ca-demo-dev.mangoglacier-d04887fd.swedencentral.azurecontainerapps.io`
+- `deployments/dev/demo/` pins image `ac24bca` (`aaas-app-demo/master`), schema `MarkItemDone`
+- All six repos are public (needed for branch protection on the free plan; three were made
+  public on 26 September)
+- `aaas-app-demo` `master` has **no ruleset** — a PR can be merged before its checks finish (finding 21)
 - GHCR package `aaas-app-demo` is public, so `registry_username` is `""`
 - Module is at tag `v0.3.0`, pinned by `deployments/dev/demo/main.tf`
-- `aaas-agent` has a remote (`main0034/aaas-agent`)
-- Merged test branches left on `aaas-deployments`: `test/gate-baseline`, `test/gate-unique`,
-  `revert/unique-title`. Safe to delete.
+- Merged branches safe to delete: `test/gate-baseline`, `test/gate-unique`, `revert/unique-title`
+  on `aaas-deployments`; the agent's `feat/*` branches on `aaas-app-demo`
 
 ## Things to remember
 
@@ -107,7 +113,9 @@ trusting the wrong layer.
 - **A red readiness gate means the old version is still serving.** Recover with a revert PR on the deployment, not by editing the migration (OQ-21). The PR comment names the cause.
 - **After a failed destroy, destroy again — never apply first.** The destroy drops the Postgres child resources from state; an apply would try to recreate them and fail on the database (finding 20).
 - **Never use `az group delete --no-wait` while pipeline jobs may run.** Wait until `az group exists -n <rg>` prints `false`.
-- **A PR-scoped token cannot push `.github/workflows/`** without the Workflows permission — keep it that way for anything an agent holds (finding 19).
+- **A PR-scoped token cannot push `.github/workflows/`** without the Workflows permission — keep it that way for anything an agent holds (finding 19). Probed on 26 September: 403.
+- **Merge on green checks, checked by name.** Nothing on `aaas-app-demo` enforces it yet (finding 21).
+- **Git from the linked shell leaves lock files** (`index.lock`, `HEAD.lock`, `tmp_obj_*`) — delete them after every commit, and use `GIT_OPTIONAL_LOCKS=0` for read commands.
 
 ## Open product questions, still parked
 
