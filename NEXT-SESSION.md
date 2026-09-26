@@ -1,103 +1,100 @@
 # Next session
 
-Written 24 September 2026 at the end of the D-22 readiness-gate session. Replaced wholesale at
-the end of every session — this file is intent, not history. What actually happened lives in
+Written 26 September 2026 at the end of the Phase 4c session. Replaced wholesale at the end of
+every session — this file is intent, not history. What actually happened lives in
 `FINDINGS.md`, where things stand lives in `STATUS.md`.
 
 ---
 
 ## Topic
 
-**Phase 4c — make the agent able to write the application.** A .NET SDK in the harness image,
-a policy that allows `dotnet`, a token that can reach an app repo, and one run of
-`agent/create-app.md` end to end, timed.
+**Phase 5 — fix-forward.** The agent opens a PR, a check fails, and the agent reads the actual
+failure and corrects its own PR, within the two rounds `create-app.md` section 6 allows. One run
+that goes red and comes back green without a human, timed and costed.
 
 One topic. If something else turns out to block it, say which and why before widening.
 
 ## Why this one
 
-The deploy loop is now honest: a green pipeline means the app runs (D-22, finding 19). The
-biggest unknown left in the POC is still the one in finding 14 — **prompt-to-running-app time**
-— and it cannot be measured while `create-app.md` is a runbook the agent is physically unable
-to follow. Every `dotnet` command in it would be refused by the policy, and the image has no SDK.
-Phase 5 (fix-forward) and Phase 7 (code generation) both sit on top of this.
+Phase 4c proved the happy path: prompt → running app in 8m 23s for an update (finding 21). Both
+runs were green on first push, so the runbook's "If CI fails" section has never executed. It is
+also the loop a real user lives in — and finding 21 showed green is not the same as correct, so
+the product will depend on how well the agent reacts to *red*. Phase 6 (the recorded demo) and
+Phase 7 sit on top of this.
 
 ## Read first, in this order
 
 | File | Why |
 |---|---|
-| `aaas-deployments/agent/create-app.md` | The runbook this session makes runnable. Its header says what is missing. |
-| `aaas-agent/harness/policy.py` | `ALLOWED_COMMANDS`, and the `python3` reasoning at the top — `dotnet` is the same problem, larger. |
-| `aaas-agent/Dockerfile`, `aaas-agent/scripts/verify-isolation` | What the image deliberately lacks, and what is asserted at start. |
-| `FINDINGS.md` findings 14 and 19 | 14: what the first agent run cost and where. 19, point 5: token permissions are a boundary GitHub enforces. |
-| `aaas-app-template/AGENT.md` | The conventions the agent has to write within. |
+| `FINDINGS.md` finding 21 | The timings, the three runbook fixes, the weak tests, the unenforced merge. |
+| `aaas-deployments/agent/create-app.md` section 6 | The fix-forward instructions nobody has run. |
+| `aaas-agent/harness/main.py` | `--non-interactive` gives the agent exactly one exchange and ends at the PR. |
+| `FINDINGS.md` finding 14, "The cost is context" | A follow-up costs as much as the original work. Decides where the loop should live. |
+
+## Before the session - Martin, in the GitHub UI
+
+1. **Ruleset on `aaas-app-demo` `master`**: require a PR and the `test` and `build` checks, block
+   force-push. It has none today; a PR was merged mid-CI on 26 September (finding 21).
+2. **A separate agent token**: fine-grained, `aaas-deployments` + `aaas-app-demo` only, Contents +
+   Pull requests read/write, Actions read, **no Workflows**. Keep `.github_PAT_dont_delete` as the
+   operator token. The agent then can no longer write to `aaas-agent`.
 
 ## State to verify before starting
 
-Don't trust this file on any of these — check:
-
-- **Is infrastructure destroyed?** It was destroyed on 24 September. Check the latest `destroy`
-  run and, if you can, `az group exists -n rg-demo-dev` - a green destroy has lied before
-  (finding 20). This session's end-to-end run will recreate the stack (~9 minutes).
-- Is everything pushed? `aaas-deployments` had one commit left locally at the end of the last
-  session (a comment in `destroy.yml`).
-- Is `aaas-app-demo` local checkout still on the stale `test/unique-title` branch with an
-  uncommitted `http/items.http` edit? Origin's `master` is `43d8be2`.
-- Does `aaas-agent` build and pass its tests as it stands, before anything is changed?
-- Was last session's GitHub token revoked? (The file is gone.)
+- **Is infrastructure running?** It was left **up** on 26 September (PR #15, image `ac24bca`),
+  unless Martin destroyed it. If running: `/ready` → `migration: 20260926142702_MarkItemDone`.
+  If destroyed: latest `destroy` run green *and* the URL no longer resolves.
+- `aaas-agent` at `23f6fd4` or later, 83 tests passing; `aaas-deployments` at `6764cbe` or later.
+- No `index.lock` / `HEAD.lock` left in any repo's `.git` (finding 21).
+- Did the ruleset and the second token happen? If not, say so before starting; do not reuse the
+  operator token for the agent silently.
 
 ## The work
 
-1. **SDK in the image.** Add the .NET 10 SDK to `aaas-agent/Dockerfile`, matching the
-   template's `global.json`. Keep `verify-isolation` asserting that `az`/`terraform` are absent.
-2. **Policy for `dotnet`.** Allow the subcommands the runbook names (`build`, `test`, `format`,
-   `ef migrations add`, `restore`) and refuse the rest (`tool install`, `new` outside the
-   template, `nuget add source`). Say in the code, as for `python3`, that this is not the
-   boundary: `dotnet build` and `dotnet test` execute arbitrary code by design.
-3. **Token for the app repo.** The agent's `GH_TOKEN` is scoped to `aaas-deployments`.
-   `create-app.md` pushes to an application repo. Widen it to exactly one app repo, with
-   Contents + Pull requests and **no Workflows permission** (finding 19).
-4. **Run it once**, against `aaas-app-demo` with a small change, and time it: prompt → app PR →
-   merge → image → deployment PR → merge → readiness gate green. That is the number finding 14
-   left open.
-5. **Read the refusals** in `runs/<id>/report.md` and fix the runbook where a refusal recurs.
+1. **Put the loop in the harness, not in the agent's turn.** After the PR, the harness waits for
+   the checks (`gh pr checks`), and on failure starts the next exchange with the failed job's log
+   (`gh run view --log-failed`, trimmed). Up to two rounds, then stop with the agent's explanation.
+2. **Get a real failure.** See decisions. Whatever produces it must be a failure CI catches that
+   the agent could plausibly have missed, not a contrived one.
+3. **Run it once**, timed per round: prompt → PR → red → fix → green → merge → deployed.
+4. **Record** rounds, cost per round and in total, and whether the fix was right, in `FINDINGS.md`.
 
 ## Decisions I will need from you
 
-- **What contains `dotnet`.** Once the agent can run `dotnet test`, it can run any code it
-  writes, with `GH_TOKEN` in the environment and network egress for NuGet. The real boundary
-  is then (a) no Azure credential in the container, which holds, and (b) what `GH_TOKEN` can
-  do. Expect me to argue that (b) is enough for the POC and that an egress allowlist is a
-  product-time concern — but it is your call.
-- **Which app repo the run targets.** `aaas-app-demo` (existing, has history, will produce a
-  deployment PR the gate may turn red because of `43d8be2` — see STATUS) or a fresh repo from
-  the template (tests the onboarding surface, OQ-15, which is out of scope).
-- **Whether 4c is one job or two runs.** POC-PLAN says one job chaining both runbooks. Two
-  separate runs is simpler and gives the same timing data. Expect me to propose two runs first.
+- **Fresh session per round, or continue the conversation.** Expect me to argue *fresh*: finding
+  14 says a follow-up pays for the whole context again. A new session gets the brief, the PR diff
+  and the failure log, nothing else. Measure both if cheap.
+- **How to produce the failure.** Options: (a) a harness flag that drops runbook step 4 (local
+  build/test/format) so the agent's first push meets CI unprepared - realistic, deterministic;
+  (b) a brief that pulls toward a CI-only check (`check-migrations.sh`, the real-Postgres
+  migration apply); (c) wait for a natural failure across several briefs. Expect me to propose (a)
+  first and (b) if time allows.
+- **Who merges on green.** Me, as in 4c, or automatic. Expect me to argue: still me - automatic
+  merge is OQ-5 and wants its own session.
 
 ## Done when
 
-- The harness image has a .NET SDK and `verify-isolation` still passes.
-- The policy allows the runbook's `dotnet` commands and refuses the rest, with tests.
-- One agent run produces a merged app PR, and the chain reaches a green readiness gate.
-- Prompt-to-running-app time is written into `FINDINGS.md`, with the cost per run.
+- The harness can wait for checks and feed a failure back, with tests for the parts that decide.
+- One run goes red, is fixed by the agent within two rounds, and reaches a green readiness gate.
+- Rounds, time and cost per round are in `FINDINGS.md`.
 
 ## Explicitly not this session
 
-- OQ-21 (immutable once *applied*) — real, but revert works as recovery today.
-- The post-destroy assertion (finding 20) — small, but its own piece of work.
-- OQ-15 (automated repo onboarding), anything commercial (D-19), revisiting Azure or .NET.
+- Fix-forward after a *deploy* failure (readiness gate red). That is OQ-21 territory - revert is
+  the recovery and it works.
+- A new app from nothing (repo provisioning, OQ-15). Automatic merge (OQ-5). Anything commercial (D-19).
 
 ## Carried over
 
-- **OQ-21 — "immutable once merged" is the wrong rule.** Unchanged by the gate: it made the
-  failure visible, not fixable forward.
-- **A green destroy is not evidence the stack is gone (finding 20).** Add `az group exists` must
-  be `false` after `terraform destroy`. The child-resource hang is fixed, but a full destroy
-  still took 25 minutes - close to where earlier runs died on OIDC renewal.
+- **Tests that prove nothing** (finding 21): the run-2 test re-implements the query it claims to
+  check. An endpoint test against CI's real Postgres would catch the class. Candidate runbook or
+  template change.
+- **OQ-21 — "immutable once merged" is the wrong rule.** Unchanged.
+- **A green destroy is not evidence the stack is gone (finding 20).** Post-destroy `az group exists`
+  assertion still not built.
 - **`gh pr close` is refused by the policy** while `PROMPT.md` only forbids merging.
 - **`.terraform.lock.hcl` does not exist.** Provider versions can drift between runs.
-- **Log Analytics revision filter returned another run's output** (finding 19, point 2).
-  Unexplained; the gate works around it.
-- **`verify-isolation` cannot see token permissions.** Asserting "no Workflows permission" on
-  `GH_TOKEN` would make finding 19's boundary checked rather than assumed.
+- **`verify-isolation` cannot see token permissions.** The 403 probe from 26 September could become
+  a start-up check.
+- **`phase4c.sh`** (in the `aaas` folder, outside the repos) is the pattern for driving runs from a
+  linked session; generalise or delete.
