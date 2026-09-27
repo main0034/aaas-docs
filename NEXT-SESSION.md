@@ -45,9 +45,12 @@ Phase 7 sit on top of this.
   unless Martin destroyed it. If running: `/ready` → `migration: 20260926142702_MarkItemDone`.
   If destroyed: latest `destroy` run green *and* the URL no longer resolves.
 - `aaas-agent` at `23f6fd4` or later, 83 tests passing; `aaas-deployments` at `6764cbe` or later.
+  The harness is on uv since [aaas-agent #1](https://github.com/main0034/aaas-agent/pull/1)
+  (`e4b7b3d`): tests are `uv run pytest -q`, and the image has no pip or uv.
 - No `index.lock` / `HEAD.lock` left in any repo's `.git` (finding 21).
-- Did the ruleset and the second token happen? If not, say so before starting; do not reuse the
-  operator token for the agent silently.
+- Did the ruleset happen? The second token exists (`aaas/.aaas-agent-PAT-dont-delete`, used for
+  the 27 September runs) - confirm its scope rather than assuming it. Do not reuse the operator
+  token for the agent silently.
 
 ## The work
 
@@ -96,5 +99,9 @@ Phase 7 sit on top of this.
 - **`.terraform.lock.hcl` does not exist.** Provider versions can drift between runs.
 - **`verify-isolation` cannot see token permissions.** The 403 probe from 26 September could become
   a start-up check.
-- **`phase4c.sh`** (in the `aaas` folder, outside the repos) is the pattern for driving runs from a
-  linked session; generalise or delete.
+- **Driving runs from a linked session:** `phase4c.sh` is superseded by `notebook-agent.command`
+  (same folder): started once, it then re-runs the harness whenever `notebook-logs/RERUN` appears,
+  so later runs need no click. Generalise it for Phase 5 or delete both.
+- **Side quest, 27 September (finding 22):** a capped run loses all its work (push is the last
+  step); `AGENT.md`'s ban on the EF in-memory provider is not enforced by CI and was broken. Both
+  bear on Phase 5: a fix-forward round that hits a cap must not lose the round.

@@ -636,6 +636,52 @@ how, and each cost time once:
   because the mount refuses deletes. Deletion had to be granted and the locks removed after every
   commit, or Martin's next git command fails.
 
+## 22. Side quest: six agent runs in one afternoon, and what they said about the loop
+
+27 September 2026. **Not golden-path work** - a local-only "notebook" app (draw and type on a
+sheet; questions go to the local `claude` CLI) built by the agent on `aaas-app-demo` branch
+`feat/notebook`, [PR #6](https://github.com/main0034/aaas-app-demo/pull/6), which must never be
+merged. Recorded only for what it taught about the agent loop. The harness moved to uv the same
+day ([aaas-agent #1](https://github.com/main0034/aaas-agent/pull/1), image build verified).
+
+| Run | Brief | Result | Wall clock | Cost (shadow) |
+|---|---|---|---|---|
+| `20260927T125116Z` | notebook, 60-turn default | **hit `max_turns`** one step before its final test pass; nothing pushed | 17m 24s | $2.54 |
+| `20260927T131219Z` | same, `--max-turns 150` | PR #6, 69 turns, ~1,800 lines | 11m 14s | $2.10 |
+| `20260927T142734Z` | fix: missing CLI returns 500 | pushed to the same branch, commented on the PR | **2m 44s** | **$0.52** |
+| `20260927T152817Z` | handwriting (image → CLI → text) | pushed, 78 turns | 21m 55s | $3.35 |
+| `20260927T155340Z` | live preview + pending-ink bug | **hit the subscription's 5-hour limit**; nothing pushed | 11m 31s | $1.31 |
+| `20260927T180921Z` | same, rerun | pushed | 24m 57s | $3.48 |
+
+About **$13.30** of shadow API cost in one afternoon, $3.85 of it (29%) thrown away.
+
+**A capped run loses everything.** The push is the runbook's last step, so a run stopped by
+`max_turns` or by a rate limit leaves nothing on GitHub; the harness reports `exit 1` and "No pull
+request URL", with the cause only in `report.md`. `max_turns` is a per-brief sizing decision, not a
+constant - and the harness should say *why* a run ended on its last line.
+
+**The subscription is a capacity ceiling, not only a licence problem (OQ-18).** A day of
+iterating on one app exhausted a personal plan's 5-hour window mid-run.
+
+**Green was not correct, twice more** (finding 21 again). A missing `claude` binary returned
+HTTP 500 with the question saved half-done; a reload made old ink "pending", so the next read
+swept it in. 49 and 94 green tests respectively; both were found by running the app against a
+real Postgres and the real CLI, in a browser. **This is not Phase 5 fix-forward** - CI never went
+red and a human found the defect. It does show that a follow-up from a precise description of an
+observed failure is cheap: a fresh run with a focused brief, $0.52 against $2.10 for the original,
+which is finding 14 ("the cost is context") seen from the other side.
+
+**A rule nobody checks gets broken.** The preview run added
+`Microsoft.EntityFrameworkCore.InMemory` to the tests, which `AGENT.md` forbids in so many words.
+CI passed. Per D-17 the fix is a check, not a sterner sentence: a CI step that fails on that
+package reference. It lives in the template's workflow, which only a human may edit.
+
+**Local-run friction worth knowing:** a Rider run configuration committed with a Docker
+"server" name fails silently on any machine without a Docker connection of that exact name
+(`Server Docker not found`, visible only in `idea.log`); a shell-script pre-launch step has no such
+dependency. And `claude setup-token` - how the harness token was made - does not log the CLI itself
+in; a subprocess that calls `claude` needs `/login` once.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.

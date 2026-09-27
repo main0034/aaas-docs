@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
 **Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running  
-**Owner:** Martin Ingeson · **Last updated:** 2026-09-26 (v0.10)
+**Owner:** Martin Ingeson · **Last updated:** 2026-09-27 (v0.11)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -446,6 +446,9 @@ commercial and start being legal.
   it (the run record reports cost per run). **First numbers (2026-09-26):** $0.65 for a
   deployment PR, $0.90 for a new feature, $0.43 for a bug fix, all single-shot. Fix-forward
   rounds are unmeasured and are where the multiplier lives.
+  **27 September (finding 22):** an afternoon of iterating on one side-quest app cost ~$13 across six
+  runs, 29% of it lost to two runs that hit a cap (`max_turns`, then the personal plan's 5-hour limit)
+  and pushed nothing. A subscription is a capacity ceiling as well as a licence problem.
 - **OQ-21 — "Immutable once merged" is the wrong rule.** CI forbids editing a migration once it
   is on `master`, but the migration that failed in Azure was merged and never applied. Fixing it
   forward is therefore blocked by the guard, and recovery needs a human override — at exactly
