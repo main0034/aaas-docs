@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
-**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running  
-**Owner:** Martin Ingeson · **Last updated:** 2026-09-27 (v0.11)
+**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks  
+**Owner:** Martin Ingeson · **Last updated:** 2026-09-28 (v0.12)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -34,8 +34,13 @@ with no human code edits. **Prompt → running: 8m 23s for a change to an existi
 when the stack had to be created**, of which the agent itself was 2m 43s–4m 11s and $0.43–0.90
 (shadow API cost). The rest is CI and Azure.
 
-**Not proven.** Fix-forward: both runs were green on first push, so the agent has never corrected
-a failed check. A new application from nothing (repo provisioning, OQ-15). And green is not the
+**Proven on 2026-09-28 (Phase 5).** Fix-forward: a PR went red on a real bug (a query EF Core could
+not translate, which would have been a 500 in production); the harness handed the trimmed log to a
+fresh session, which fixed it in one round and reached a green readiness gate. **$0.38 per round,
+the same as the original push** — budget a fix round as one more run (D-23).
+
+**Not proven.** A clean create: the Phase 5 create failed on a Postgres child resource and needed
+a hand-written `import` to recover (OQ-14). A new application from nothing (repo provisioning, OQ-15). And green is not the
 same as correct: the first run shipped a filter bug its own tests could not see.
 
 **This document drifted from the build.** The POC documents do not reference it, which is how
@@ -369,6 +374,7 @@ loop. See OQ-4 and OQ-5 — this is the topic for the next session.
 | D-20 | App scaffold: **C# / .NET 10**, minimal APIs, EF Core + Npgsql, xUnit v3. One language, not a default among several | 2026-09-21 | Compiler as a free deterministic gate; first-class Entra token support in Npgsql + Azure.Identity; a mature migration tool that works over the app's own tokenised connection (see D-21); code a Swedish SMB's Microsoft partner can maintain, which strengthens handover (OQ-3) and the Power Platform counter-argument. Agent support is not a differentiator either way. Cost: re-proving the image handoff with a new template. Python template retired rather than kept as an option |
 | D-21 | Migrations: **EF Core, run in a `migrate` init container**, immutable once merged, expand-only, CI-enforced | 2026-09-21 | Resolves OQ-13. CI cannot reach the private database (D-15) and holds no DB rights; running in the app process would break the health contract; a Container Apps Job needs `local-exec` ordering. The init container orders migrate-before-start per revision for free, and Single revision mode keeps the old revision serving if it fails. Requires a workload-profile Consumption environment — the only kind where init containers get the managed identity. `app-stack` v0.3.0 |
 | D-22 | **A successful `terraform apply` is not evidence that a deployment works.** Every apply, including the first, is followed by a readiness gate that asks the *platform* whether the new revision runs: it forces a replica, then requires `runningState = Running` and `latestReadyRevisionName` = the new revision, then `/ready` → `database: ok`. On failure the pipeline goes red, the init container's `[migrate] FAILED:` line is fetched from Log Analytics onto the deployment PR, and nothing rolls back automatically — the old revision keeps serving and recovery is a revert PR | 2026-09-23 | Amended from 2026-09-22, which had the gate assert `/ready` reports the expected migration. That cannot work: after a failed deploy the *old* revision answers, and it has nothing pending. Proven on 23 September (finding 19): red on a live-data migration failure 6 minutes after the apply finished, cause included; green on create (11s) and on the revert (37s). Fail-and-stop because an automatic rollback would change Azure outside git (D-5) |
+| D-23 | **Fix-forward runs in the harness, not in the agent's turn: a fresh session per round, at most two rounds, and the harness never merges** | 2026-09-28 | Waiting for CI is not model work, so the harness polls for free and reads checks per commit. A fresh session gets the request, diff stat and trimmed log only — finding 14's "the cost is context". Proven in one round for $0.38, equal to the original push (finding 23). Merging stays with a human until OQ-5 is settled, because green is still not correct |
 | D-19 | **This is a build-to-learn exercise, not a business in formation** | 2026-09-20 | Stated preference: play with the technology rather than settle the commercial model. The commercial and go-to-market open questions are parked rather than deleted, so the build proceeds without them blocking and the thinking is not lost. Revisit when there is something worth selling |
 
 ---
@@ -423,6 +429,9 @@ commercial and start being legal.
   bug its tests could not see — they asserted only that routes fail without a database.
   Auto-merge on green is only as good as the tests the agent writes, so the template and runbook
   need to make weak tests hard to write before this can lean toward "auto".
+  **2026-09-28:** asked explicitly for tests through the endpoint, the agent still wrote 503 checks
+  and in-memory `IQueryable` tests, because the template says tests run without a database. The
+  template decides test strength, not the brief.
 - **OQ-6 — Cost control.** Per-customer budget caps, what happens at the cap, how cost is
   estimated *before* apply and shown to a non-technical user.
 - **OQ-7 — Data model evolution.** Mechanism settled by D-21 (expand-only, immutable,
@@ -449,6 +458,8 @@ commercial and start being legal.
   **27 September (finding 22):** an afternoon of iterating on one side-quest app cost ~$13 across six
   runs, 29% of it lost to two runs that hit a cap (`max_turns`, then the personal plan's 5-hour limit)
   and pushed nothing. A subscription is a capacity ceiling as well as a licence problem.
+  **28 September (finding 23):** one fix-forward round cost $0.38, the same as the push it fixed.
+  A red check roughly doubles the agent cost of a change; that is the multiplier to price.
 - **OQ-21 — "Immutable once merged" is the wrong rule.** CI forbids editing a migration once it
   is on `master`, but the migration that failed in Azure was merged and never applied. Fixing it
   forward is therefore blocked by the guard, and recovery needs a human override — at exactly
@@ -461,7 +472,10 @@ commercial and start being legal.
   `23505: could not create unique index`. Someone has to translate "your two items called
   X share a name" and decide who opens the revert — us, automatically, or the customer by
   pressing something. Interacts with OQ-5.
-- **OQ-14 — Operations that fail unrecoverably.** **Update, 2026-09-24 (finding 20):** the teardown
+- **OQ-14 — Operations that fail unrecoverably.** **Update, 2026-09-28 (finding 23):** a *create*
+  failed after 9 minutes on `appdb` "already exists" in Azure but not in state. Recovery was an
+  `import` block in a PR, then a second PR to remove it: minutes for us, impossible for the §2 user.
+  Fourth Postgres-child failure; the first on create. **Update, 2026-09-24 (finding 20):** the teardown
   hang is sidestepped - `destroy.yml` drops the Postgres child resources from state and deletes
   the server directly - but the evening that took exposed the general form of this question: a
   destroy reported success in 18 seconds while the entire stack still existed, because
@@ -502,7 +516,8 @@ commercial and start being legal.
 
 > **This section is stale and needs rewriting.** Items 1 and 2 are superseded by D-13; the
 > rest was written before the POC existed. The current next step is in `STATUS.md`: run the
-> agent harness once, end to end, and time it. (Done 2026-09-26; the next step is fix-forward.)
+> agent harness once, end to end, and time it. (Done 2026-09-26; fix-forward done 2026-09-28; the
+> next step is Phase 6, the recorded demo.)
 
 1. ~~**Golden path spike on Scaleway.**~~ Superseded by D-13.
 2. ~~**Same spike on one Nordic provider.**~~ Superseded by D-13.

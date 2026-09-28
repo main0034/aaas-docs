@@ -682,9 +682,111 @@ package reference. It lives in the template's workflow, which only a human may e
 dependency. And `claude setup-token` - how the harness token was made - does not log the CLI itself
 in; a subprocess that calls `claude` needs `/login` once.
 
+## 23. Fix-forward works: red → fresh session → green in one round, $0.38 a round
+
+28 September 2026, Phase 5. The harness now waits for a PR's checks and, on red, gives a
+**fresh** session the request, the diff stat and the trimmed failure log
+([aaas-agent #2](https://github.com/main0034/aaas-agent/pull/2), `--fix-rounds 2`). The loop
+lives in the harness, not the agent's turn, so waiting costs no tokens. It never merges.
+Brief: `briefs/item-search.md` (search items by word in title or note, combinable with
+"only open"). Model: CLI default.
+
+| Run | Setup | Result | Wall clock | Cost (shadow) |
+|---|---|---|---|---|
+| `20260928T171215Z` | normal runbook | green first push (PR #8, closed) | 8m 21s | $0.80 |
+| `20260928T172139Z` | `--skip-local-checks` | green first push (PR #9, closed) - **invalid, see below** | 11m 4s | $1.18 |
+| `20260928T173337Z` | `--skip-local-checks`, one run per container | **red → 1 fix round → green** (PR #10, merged) | 7m 7s | **$0.76** |
+
+The run that counts, per round:
+
+| Round | Agent | Model turns | Cost | CI verdict | CI wait |
+|---|---|---|---|---|---|
+| 0 - initial | 2m 47s | 17 | $0.38 | **red** (`test`) | 42s |
+| 1 - fix, fresh session | 2m 38s | 22 | $0.38 | green | 57s |
+
+Then: operator merge 1m 47s after green → deployment PR #17 in 73s → plan 1m 14s → merge →
+create apply **failed** after 9m (below) → recovery PR #18 → apply 44s → **readiness gate green**
+(46s). **Prompt → running: 26m 06s**, of which ~13m was the failed create and its recovery.
+Search, case-insensitivity and search + open-only were checked by hand against the deployed app.
+
+**The failure was real, not staged.** The first push used
+`Contains(term, StringComparison.OrdinalIgnoreCase)`, which EF Core cannot translate. The
+endpoint test got 500 instead of 503, because the exception is thrown while building the query,
+before the database is touched, and `DatabaseUnavailableHandler` only maps database failures.
+In production the same line would have made `GET /items?q=` return 500. The fix round switched to
+`ToLower().Contains()`, correctly, and explained why. The normal-runbook run hit the same bug
+locally and fixed it before pushing, which is what `--skip-local-checks` removes.
+
+**A fix round costs what the original cost, not a fraction of it.** $0.38 against $0.38. Finding 22's
+$0.52-vs-$2.10 was a small fix to a large feature; here both halves are small, and the fixed cost
+of a session (runbook, AGENT.md, reading the code) dominates. Budget a fix round at roughly one
+more run, not a percentage.
+
+**The first choice of failure did not produce one.** The plan was a CI check banning the EF
+in-memory provider (now on `master` in the app and the template, `ci: fail on a fake database in
+tests`), plus a brief that asks for endpoint tests. The agent followed `AGENT.md` both times and
+never reached for the package. The check is still worth having; it just is not a lever for making
+an agent fail.
+
+### The harness leaked one run into the next
+
+`run.sh` mounted all of `runs/` into the container. Run 2 listed `/work/runs`, read run 1's
+workspace, and copied its already-formatted, already-fixed code - so skipping local checks changed
+nothing, and the measurement was void. It is also a boundary problem: every run could read every
+earlier run's transcript. Fixed (`be1c938`): `run.sh` picks the run id and mounts only
+`runs/<id>`; `verify-isolation` refuses to start if `/work/runs` holds anything else. Same lesson
+as finding 2: the container's mounts are the boundary, so assert them.
+
+### The fix round got no log, and fixed it anyway
+
+`gh api .../jobs/<id>/logs` refuses to print a log that contains terminal escape sequences, and
+`dotnet test` colours its output. The harness caught the error and put *the error message* in the
+brief where the log should have been. The agent then tried `gh api ... --allow-escape-sequences`
+itself (refused by the policy - it had read the flag in that message), fell back to running the
+tests locally, reproduced the failure and fixed it. Graceful, but luck: a CI-only failure (the real
+Postgres migration apply, the smoke test) cannot be reproduced locally. Fixed: the harness passes
+the flag and strips the sequences. Trimming now anchors on the failing step
+(`##[group]Run …` to the first `##[error]`) rather than the word "error", which the first version
+matched in the *script text* of the new CI step and so handed over 40 lines of git checkout. On the
+real log from this run the trimmed version is 150 lines, starting at `Run dotnet test`.
+
+### A create apply failed on `appdb`, and an import recovered it
+
+The create for deployment PR #17 built all 14 resources and then failed on the last:
+`azurerm_postgresql_flexible_server_database.this` - "a resource with the ID …/databases/appdb
+already exists - to be managed via Terraform this resource needs to be imported into the State".
+The server had been created 1 second earlier by the same apply; the database create started in the
+same second as the server's SSL configuration and AAD administrator. **Cause not established**;
+the likely shape is concurrent child operations on a new Flexible Server and a create that
+succeeded in Azure while the provider saw an error. Finding 21's create of the same stack worked.
+
+A re-run fails the same way, and destroy-and-recreate costs ~35 minutes. Instead: an `import`
+block for the database in `deployments/dev/demo/imports.tf` (PR #18, plan `1 to import, 0 to
+add`), applied in 44s, readiness gate green; then removed again (PR #19), because on the next create
+it would try to import a database that does not exist yet. That is the fourth Postgres-child
+failure (findings 18, 20, and now this one on create), and the first with a recovery that took
+minutes. A §2 user cannot do any of it: OQ-14.
+
+### Smaller things
+
+- **`aaas-app-template` could not merge any PR**: its ruleset allowed only rebase, the repository
+  only squash. Martin fixed the settings on 28 September.
+- **The operator token cannot start a workflow** (`workflow_dispatch` → 403), so `destroy` still needs
+  the GitHub UI.
+- The agent tokens behaved as intended: the agent token is refused on `aaas-agent` and `aaas-docs`
+  (push dry-run), and the Workflows 403 is intact for both tokens.
+- One false policy refusal: a `find` over `/root` containing `nuget` in a path was refused as
+  `dotnet nuget`.
+- **Tests still prove less than they claim** (finding 21). The brief asked for tests that go
+  through `/items` and show which items come back. The agent wrote a 503 test through the
+  endpoint and behaviour tests on an in-memory `IQueryable`, because `AGENT.md` says tests run with
+  no database. The brief and the template contradict each other, and the template wins. That
+  503 test is also what caught the bug, by accident.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
+- ~~Whether the agent can fix its own failed check~~ — answered in finding 23: yes, in one fresh round, for $0.38. Not yet seen: a CI-only failure it cannot reproduce locally, or a second round.
 - ~~How long prompt-to-running-app takes~~ — answered in finding 21: **8m 23s** for a change to an existing app, **18m 43s** when the stack has to be created. Not yet measured: a new app from nothing (new repo, new deployment), which needs repo provisioning (OQ-15).
 - Whether teardown is clean — partly (finding 20): the child-resource hang is fixed, but a destroy takes ~25 minutes and nothing verifies that it removed anything.
 - ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it was not, at `min_replicas = 0`. Since finding 19 it is, by the readiness gate.

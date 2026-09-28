@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 26 September 2026, at the end of the Phase 4c session: the agent wrote application code and it reached Azure. Start here in a new conversation.
+Written 28 September 2026, at the end of the Phase 5 session: the agent fixed its own failed check. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -33,25 +33,24 @@ Written 26 September 2026, at the end of the Phase 4c session: the agent wrote a
 
 - **Phase 4c — the agent writes the application.** Harness image has the .NET SDK (10.0.401); the policy allows the runbook's `dotnet` commands and refuses the rest; `--task create-app --app-repo <name>`. Two runs against `aaas-app-demo` (finding 21): **prompt → running app in 8m 23s for an update, 18m 43s when the stack had to be created.** Agent cost $0.43–0.90 (shadow) per run. CI green on first push both times; the second run had zero policy refusals
 
-Verified working: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260926142702_MarkItemDone"}`
+- **Phase 5 — fix-forward.** `--fix-rounds 2`: the harness waits for the PR's checks on its head commit and, on red, gives a *fresh* session the request, diff stat and trimmed failure log. One run went red (`test`: an untranslatable EF query → 500), was fixed in one round, and reached a green readiness gate: **$0.38 per round, 2m 47s + 2m 38s of agent time, prompt → running 26m 06s** including a failed create and its recovery (finding 23). The CI check banning a fake database in tests is on `master` in the app and the template
+
+Verified working on 28 September: `GET /items?q=milk&open=true` against the deployed app. Before that, on 26 September: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260926142702_MarkItemDone"}`
 
 
 ## Not started
 
 - **A new app from nothing** — new repo + first deployment + first app PR. Blocked on repo provisioning (OQ-15), deliberately out of scope so far
-- **Phase 5** — fix-forward
 - **Phase 7** — application code generation
 
 ## Next step
 
-**Phase 5 — fix-forward.** The agent reads a failed check and corrects its own PR. See
-`NEXT-SESSION.md`. Two cheap prerequisites Martin does in the GitHub UI first: a ruleset on
-`aaas-app-demo` `master` requiring the `test` and `build` checks, and a separate agent token
-(finding 21). After that:
+**Phase 6 — the recorded demo**, per `NEXT-SESSION.md`. Candidates that compete with it:
 
 - **OQ-21 — "immutable once applied", not "once merged".** Still true: fixing forward a
   merged-but-never-applied migration needs a human override. Revert is the recovery that works today.
 - **Post-destroy assertion** — `az group exists` must be `false` after a destroy, or the run fails (finding 20). About five lines.
+- **Postgres child resources on create** (finding 23) — the fourth failure of that shape. Recovery was an `import` block; nothing automatic exists.
 
 Running the agent again, for reference:
 
@@ -62,11 +61,14 @@ export GH_TOKEN=...                  # fine-grained PAT: deployments + the app r
 ./run.sh --request @briefs/room-booking.md                        # create-deployment
 ./run.sh --task create-app --app-repo aaas-app-demo \
          --request @briefs/item-done.md --non-interactive          # create-app
+./run.sh --task create-app --app-repo aaas-app-demo \
+         --request @briefs/item-search.md --fix-rounds 2           # with fix-forward
 ```
 
 From a linked cloud session, Claude cannot type into Terminal (click-only) and the linked
 shell has no Docker: the run goes in a script Martin starts once, logged through `script(1)`
-(finding 21). `phase4c.sh` in the `aaas` folder is that script.
+(finding 21). `phase5/phase5.command` in the `aaas` folder is the current one: started once, it
+re-runs the harness whenever `phase5/logs/RERUN` appears and stops on `phase5/logs/STOP`.
 
 `runs/<id>/report.md` carries the wall clock, the tool histogram, the cost
 breakdown and every policy refusal. Read the refusals: a refusal that recurs is
@@ -90,18 +92,27 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: RUNNING** (recreated 26 September by deployment PR #14, updated by #15) —
-  ~$20/month, dominated by Postgres. Destroy with `destroy.yml` when it is not needed; then check
-  `az group exists -n rg-demo-dev` prints `false` (finding 20).
-  URL: `https://ca-demo-dev.mangoglacier-d04887fd.swedencentral.azurecontainerapps.io`
-- `deployments/dev/demo/` pins image `ac24bca` (`aaas-app-demo/master`), schema `MarkItemDone`
-- All six repos are public (needed for branch protection on the free plan; three were made
-  public on 26 September)
-- `aaas-app-demo` `master` has **no ruleset** — a PR can be merged before its checks finish (finding 21)
+- **Infrastructure: RUNNING** unless Martin has run `destroy` since (recreated 28 September by
+  deployment PR #17, recovered by #18) — ~$20/month, dominated by Postgres. Destroy with
+  `destroy.yml` from the GitHub UI (the operator token gets 403 on `workflow_dispatch`); then check
+  that the URL no longer resolves and, from a machine with `az`, `az group exists -n rg-demo-dev`
+  prints `false` (finding 20).
+  URL: `https://ca-demo-dev.bravemeadow-0aa9b7fc.swedencentral.azurecontainerapps.io` — **a new
+  domain**: the environment was recreated, so the old `mangoglacier` URL is gone for good
+- `deployments/dev/demo/` pins image `7f382fa` (`aaas-app-demo/master`: item search), schema
+  `MarkItemDone` (search needed no migration)
+- All six repos are public (needed for branch protection on the free plan)
+- `aaas-app-demo` `master` has a ruleset: PR required, squash only, `test` + `build` required and
+  strict, no force-push or deletion (created 26 September)
+- `aaas-app-template`: ruleset and repo settings now agree on squash (fixed 28 September)
 - GHCR package `aaas-app-demo` is public, so `registry_username` is `""`
 - Module is at tag `v0.3.0`, pinned by `deployments/dev/demo/main.tf`
-- Merged branches safe to delete: `test/gate-baseline`, `test/gate-unique`, `revert/unique-title`
-  on `aaas-deployments`; the agent's `feat/*` branches on `aaas-app-demo`
+- Two tokens in the `aaas` folder: `.github_PAT_dont_delete` (operator, all repos, no Workflows, no
+  Actions write) and `.aaas-agent-PAT-dont-delete` (agent: `aaas-deployments` + `aaas-app-demo`
+  only; refused on `aaas-agent` and `aaas-docs`)
+- Merged branches safe to delete: `recover/demo-appdb-import`, `chore/remove-appdb-import`,
+  `deploy/rooms` on `aaas-deployments`; `ci/no-fake-db` on the app and template; the agent's
+  `feat/*` branches on `aaas-app-demo` (not `feat/notebook` — PR #6, never merge)
 
 ## Things to remember
 
@@ -114,7 +125,9 @@ trusting the wrong layer.
 - **After a failed destroy, destroy again — never apply first.** The destroy drops the Postgres child resources from state; an apply would try to recreate them and fail on the database (finding 20).
 - **Never use `az group delete --no-wait` while pipeline jobs may run.** Wait until `az group exists -n <rg>` prints `false`.
 - **A PR-scoped token cannot push `.github/workflows/`** without the Workflows permission — keep it that way for anything an agent holds (finding 19). Probed on 26 September: 403.
-- **Merge on green checks, checked by name.** Nothing on `aaas-app-demo` enforces it yet (finding 21).
+- **Merge on green checks, checked by name.** The ruleset enforces it on `aaas-app-demo` now; the operator token is admin, so do not rely on the ruleset alone.
+- **A run sees only its own directory.** `run.sh` mounts `runs/<id>`, not `runs/`; a run that could read earlier runs copied their code (finding 23).
+- **A create that fails on a Postgres child with "already exists"** is recovered by an `import` block in the deployment directory, applied, then removed in a second PR - not by a re-run, and not by destroy (finding 23).
 - **Git from the linked shell leaves lock files** (`index.lock`, `HEAD.lock`, `tmp_obj_*`) — delete them after every commit, and use `GIT_OPTIONAL_LOCKS=0` for read commands.
 
 ## Open product questions, still parked
