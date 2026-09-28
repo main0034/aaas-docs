@@ -92,13 +92,13 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: RUNNING** unless Martin has run `destroy` since (recreated 28 September by
-  deployment PR #17, recovered by #18) — ~$20/month, dominated by Postgres. Destroy with
-  `destroy.yml` from the GitHub UI (the operator token gets 403 on `workflow_dispatch`); then check
-  that the URL no longer resolves and, from a machine with `az`, `az group exists -n rg-demo-dev`
-  prints `false` (finding 20).
-  URL: `https://ca-demo-dev.bravemeadow-0aa9b7fc.swedencentral.azurecontainerapps.io` — **a new
-  domain**: the environment was recreated, so the old `mangoglacier` URL is gone for good
+- **Infrastructure: DESTROYED** 28 September — `destroy` green at 18:32Z after 26m 41s, 24m 32s of it
+  the Container Apps environment; Terraform reports the resource group deleted. **Not verified against
+  Azure**: five minutes later the app's hostname still resolved but no longer answered (connection
+  timeout). Check `az group exists -n rg-demo-dev` prints `false` (finding 20). The operator token
+  cannot start `destroy` (403 on `workflow_dispatch`); use the GitHub UI.
+  Last URL: `https://ca-demo-dev.bravemeadow-0aa9b7fc.swedencentral.azurecontainerapps.io`. Every
+  create gets a new environment domain, so the URL changes each time
 - `deployments/dev/demo/` pins image `7f382fa` (`aaas-app-demo/master`: item search), schema
   `MarkItemDone` (search needed no migration)
 - All six repos are public (needed for branch protection on the free plan)

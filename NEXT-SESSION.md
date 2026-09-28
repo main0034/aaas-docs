@@ -34,17 +34,17 @@ attempt.
 
 ## Before the session - Martin
 
-1. **Is the stack destroyed?** If not: GitHub UI → Actions → `destroy` → `deployments/dev/demo`,
-   confirm `demo`. The operator token cannot start workflows (403).
+1. **Confirm the destroy removed everything:** `az group exists -n rg-demo-dev` → `false`. The
+   28 September destroy was green, but its hostname still resolved minutes later.
 2. **Push the post-destroy assertion** (the five lines finding 20 asked for) — it is under
    `.github/workflows/`, so only you can. Claude can prepare it as a patch at the start of the
    session, the way `phase5/patches/` worked.
 
 ## State to verify before starting
 
-- **Infrastructure down:** latest `destroy` run green *and*
-  `ca-demo-dev.bravemeadow-0aa9b7fc.swedencentral.azurecontainerapps.io` does not resolve. If it
-  still runs: it pins image `7f382fa`, `/ready` → `migration: 20260926142702_MarkItemDone`.
+- **Infrastructure down:** `destroy` run `36462803976` green (28 September, 18:32Z) *and*
+  `ca-demo-dev.bravemeadow-0aa9b7fc.swedencentral.azurecontainerapps.io` no longer resolves. The
+  deployment still pins image `7f382fa`; schema `20260926142702_MarkItemDone`.
 - `deployments/dev/demo/imports.tf` does **not** exist (removed by PR #19). If it is back, a create
   plan will try to import a database that does not exist.
 - `aaas-agent` `master` includes the fix-forward work ([#2](https://github.com/main0034/aaas-agent/pull/2),
