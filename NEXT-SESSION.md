@@ -104,7 +104,8 @@ attempt.
 - **A policy false positive:** a `find` whose path contained `nuget` was refused as `dotnet nuget`.
 - **A capped run still loses its work** (finding 22); a fix round that hits `max_turns` now at least
   says so on its last line.
-- **Run drivers:** `phase5/`, `phase4c.sh` and `notebook-agent.command` were deleted on 28 September.
+- **Run drivers:** `phase5/` was deleted on 28 September; `phase4c.sh`, `notebook-agent.command`
+  and `notebook-app.command` are still in the `aaas` folder and superseded.
   Phase 6 needs a new one-click driver in the same shape (build, run, watch for `RERUN`/`STOP`).
 - **.NET hexagonal guidelines** (`guidelines/dotnet-hexagonal/`, ported 28 September from Martin's
   Java set). Reference material now. It becomes agent input through a second template that
