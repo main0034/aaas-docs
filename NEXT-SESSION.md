@@ -106,5 +106,7 @@ attempt.
   says so on its last line.
 - **Run drivers:** `phase5/phase5.command` supersedes `phase4c.sh` and `notebook-agent.command`;
   delete the older two.
-- **Untracked `aaas-agent/docs/`** — Java ADRs (hexagonal architecture, JPA, Maven modules) that look
-  like they belong to another project. Not committed; Martin to move or delete.
+- **.NET hexagonal guidelines** (`guidelines/dotnet-hexagonal/`, ported 28 September from Martin's
+  Java set). Reference material now. It becomes agent input through a second template that
+  ships it, not through a flag on golden-path runs; its README lists every conflict with
+  `aaas-app-template`. Not for Phase 6 (D-3: one golden path first).
