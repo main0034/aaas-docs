@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 28 September 2026, at the end of the Phase 5 session: the agent fixed its own failed check. Start here in a new conversation.
+Written 29 September 2026, at the end of the Phase 6 session: the whole chain ran from a destroyed stack, except that the create needed an import - and the cause turned out to be the app itself. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -35,7 +35,9 @@ Written 28 September 2026, at the end of the Phase 5 session: the agent fixed it
 
 - **Phase 5 — fix-forward.** `--fix-rounds 2`: the harness waits for the PR's checks on its head commit and, on red, gives a *fresh* session the request, diff stat and trimmed failure log. One run went red (`test`: an untranslatable EF query → 500), was fixed in one round, and reached a green readiness gate: **$0.38 per round, 2m 47s + 2m 38s of agent time, prompt → running 26m 06s** including a failed create and its recovery (finding 23). The CI check banning a fake database in tests is on `master` in the app and the template
 
-Verified working on 28 September: `GET /items?q=milk&open=true` against the deployed app. Before that, on 26 September: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260926142702_MarkItemDone"}`
+- **Phase 6 — the demo, not recorded by decision.** One run from a destroyed stack (finding 24): brief `item-due.md` → agent PR #11 in 5m 25s, $0.79, CI green first push → deployment PR #21 → create **failed on `appdb` "already exists"** → import recovery (#22) → readiness gate green → overdue list verified against the live app. **Prompt → running 30m 58s**, ~7m of it the failure and recovery. The cause: the app's `migrate` init container created the database before Terraform did (EF Core `Migrate()` creates a missing database). Fixed in `app-stack` v0.3.2, **not yet proven by a create**. `POC-PLAN.md` §9: eight of nine ticked, the unticked one is exactly this
+
+Verified working on 29 September: `GET /items/overdue` and `/ready` → `migration: 20260929180049_AddItemDueDate`. On 28 September: `GET /items?q=milk&open=true` against the deployed app. Before that, on 26 September: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260926142702_MarkItemDone"}`
 
 
 ## Not started
@@ -45,12 +47,14 @@ Verified working on 28 September: `GET /items?q=milk&open=true` against the depl
 
 ## Next step
 
-**Phase 6 — the recorded demo**, per `NEXT-SESSION.md`. Candidates that compete with it:
+Per `NEXT-SESSION.md`: first a **clean create on `app-stack` v0.3.2** (the one unticked §9 item), then
+**tests that prove behaviour** - CI's Postgres available to the app's tests, in the template and the
+demo, so a green check means the endpoint returns the right rows. Three runs (findings 21, 23, 24)
+wrote tests that could not have caught a wrong endpoint, whatever the brief asked. Competing:
 
-- **OQ-21 — "immutable once applied", not "once merged".** Still true: fixing forward a
-  merged-but-never-applied migration needs a human override. Revert is the recovery that works today.
-- **Post-destroy assertion** — `az group exists` must be `false` after a destroy, or the run fails (finding 20). About five lines.
-- **Postgres child resources on create** (finding 23) — the fourth failure of that shape. Recovery was an `import` block; nothing automatic exists.
+- **OQ-21 — "immutable once applied", not "once merged".** Unchanged.
+- **The permanent `workload_profile_name` diff** on the Container App (finding 24). Harmless so far.
+- **Phase 7** — open-ended code generation. Should start from tests that mean something.
 
 Running the agent again, for reference:
 
@@ -67,8 +71,8 @@ export GH_TOKEN=...                  # fine-grained PAT: deployments + the app r
 
 From a linked cloud session, Claude cannot type into Terminal (click-only) and the linked
 shell has no Docker: the run goes in a script Martin starts once, logged through `script(1)`
-(finding 21). `phase5/phase5.command` in the `aaas` folder is the current one: started once, it
-re-runs the harness whenever `phase5/logs/RERUN` appears and stops on `phase5/logs/STOP`.
+(finding 21). `phase6.command` in the `aaas` folder is the current one: started once, it
+re-runs the harness whenever `phase6-logs/RERUN` appears (one line of `run.sh` arguments) and stops on `phase6-logs/STOP`. Edit its first `run_once` line for a new brief.
 
 `runs/<id>/report.md` carries the wall clock, the tool histogram, the cost
 breakdown and every policy refusal. Read the refusals: a refusal that recurs is
@@ -92,26 +96,24 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: DESTROYED** 28 September — `destroy` green at 18:32Z after 26m 41s, 24m 32s of it
-  the Container Apps environment; Terraform reports the resource group deleted. **Not verified against
-  Azure**: five minutes later the app's hostname still resolved but no longer answered (connection
-  timeout). Check `az group exists -n rg-demo-dev` prints `false` (finding 20). The operator token
-  cannot start `destroy` (403 on `workflow_dispatch`); use the GitHub UI.
-  Last URL: `https://ca-demo-dev.bravemeadow-0aa9b7fc.swedencentral.azurecontainerapps.io`. Every
-  create gets a new environment domain, so the URL changes each time
-- `deployments/dev/demo/` pins image `7f382fa` (`aaas-app-demo/master`: item search), schema
-  `MarkItemDone` (search needed no migration)
+- **Infrastructure: DESTROY PENDING** - created 29 September for the demo, destroy started by Martin at
+  the end of the session. `destroy.yml` now fails unless `az group exists -n rg-demo-dev` is `false`, so a
+  green destroy is Azure's answer, not Terraform's. **Check the last `destroy` run is green before
+  assuming nothing is billing.** The operator token cannot start `destroy` (403); use the GitHub UI.
+  Last URL: `https://ca-demo-dev.happytree-6c12fdba.swedencentral.azurecontainerapps.io` (changes every create)
+- `deployments/dev/demo/` pins `app-stack` **v0.3.2** and image `63ec008` (`aaas-app-demo/master`: due dates),
+  schema `AddItemDueDate`. `imports.tf` does not exist (removed by #23)
 - All six repos are public (needed for branch protection on the free plan)
 - `aaas-app-demo` `master` has a ruleset: PR required, squash only, `test` + `build` required and
   strict, no force-push or deletion (created 26 September)
 - `aaas-app-template`: ruleset and repo settings now agree on squash (fixed 28 September)
 - GHCR package `aaas-app-demo` is public, so `registry_username` is `""`
-- Module is at tag `v0.3.0`, pinned by `deployments/dev/demo/main.tf`
-- Two tokens in the `aaas` folder: `.github_PAT_dont_delete` (operator, all repos, no Workflows, no
+- Module tags: `v0.3.1` (Postgres children serialised - not the fix), **`v0.3.2`** (Container App waits for the database - the fix, unproven on create). Pinned: v0.3.2
+- Three tokens in the `aaas` folder: `.claude-oauth-token-dont-delete` (the harness's Claude login), `.github_PAT_dont_delete` (operator, all repos, no Workflows, no
   Actions write) and `.aaas-agent-PAT-dont-delete` (agent: `aaas-deployments` + `aaas-app-demo`
   only; refused on `aaas-agent` and `aaas-docs`)
 - Merged branches safe to delete: `recover/demo-appdb-import`, `chore/remove-appdb-import`,
-  `deploy/rooms` on `aaas-deployments`; `ci/no-fake-db` on the app and template; the agent's
+  `recover/demo-appdb-import-2`, `chore/remove-appdb-import-2`, `deploy/demo-63ec008`, `deploy/rooms` on `aaas-deployments`; `ci/no-fake-db` on the app and template; the agent's
   `feat/*` branches on `aaas-app-demo` (not `feat/notebook` — PR #6, never merge)
 
 ## Things to remember
@@ -127,7 +129,10 @@ trusting the wrong layer.
 - **A PR-scoped token cannot push `.github/workflows/`** without the Workflows permission — keep it that way for anything an agent holds (finding 19). Probed on 26 September: 403.
 - **Merge on green checks, checked by name.** The ruleset enforces it on `aaas-app-demo` now; the operator token is admin, so do not rely on the ruleset alone.
 - **A run sees only its own directory.** `run.sh` mounts `runs/<id>`, not `runs/`; a run that could read earlier runs copied their code (finding 23).
-- **A create that fails on a Postgres child with "already exists"** is recovered by an `import` block in the deployment directory, applied, then removed in a second PR - not by a re-run, and not by destroy (finding 23).
+- **A create that fails on `appdb` "already exists"** is recovered by an `import` block in the deployment directory, applied, then removed in a second PR - not by a re-run, and not by destroy (findings 23, 24). The cause was the app creating the database (finding 24); v0.3.2 should make it unnecessary.
+- **Anything the platform starts during an apply can create what Terraform expects to create.** The app is database administrator; its startup is part of the create path (finding 24).
+- **`[skip ci]` in a squash-merge title stops `apply`.** Used once (#20) to pin a module on a destroyed stack. Never on a live one: `master` would describe something no apply has seen.
+- **Every apply after a create shows `1 to change`** on the Container App (`workload_profile_name` → null). Known and harmless so far (finding 24).
 - **Git from the linked shell leaves lock files** (`index.lock`, `HEAD.lock`, `tmp_obj_*`) — delete them after every commit, and use `GIT_OPTIONAL_LOCKS=0` for read commands.
 
 ## Open product questions, still parked
