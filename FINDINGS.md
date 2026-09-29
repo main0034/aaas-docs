@@ -760,6 +760,11 @@ same second as the server's SSL configuration and AAD administrator. **Cause not
 the likely shape is concurrent child operations on a new Flexible Server and a create that
 succeeded in Azure while the provider saw an error. Finding 21's create of the same stack worked.
 
+**Correction, 29 September (finding 24):** the cause was the application, not the Postgres
+children racing each other. The Container App's `migrate` init container created `appdb` itself
+(EF Core `Migrate()` creates a missing database) the moment its identity became administrator.
+Fixed in `app-stack` v0.3.2.
+
 A re-run fails the same way, and destroy-and-recreate costs ~35 minutes. Instead: an `import`
 block for the database in `deployments/dev/demo/imports.tf` (PR #18, plan `1 to import, 0 to
 add`), applied in 44s, readiness gate green; then removed again (PR #19), because on the next create
@@ -783,12 +788,90 @@ minutes. A §2 user cannot do any of it: OQ-14.
   no database. The brief and the template contradict each other, and the template wins. That
   503 test is also what caught the bug, by accident.
 
+## 24. Phase 6: the chain runs from nothing, except the create - and the app was racing Terraform
+
+29 September 2026, Phase 6. One run from a destroyed stack, not recorded (Martin: "if it works it
+works"). Brief `item-due.md`: optional due dates on items and a list of overdue ones, which needs a
+migration. Run `20260929T175630Z`, `--fix-rounds 2`, started by `phase6.command`.
+
+| Step | Time (UTC) | Duration |
+|---|---|---|
+| Harness start → app PR #11 opened | 17:56:30 → ~18:02:00 | **5m 25s** agent, 37 turns, **$0.79**, 0 refusals |
+| App CI (`test`, `build`) | 18:02:04 → 18:02:57 | 53s, **green on first push** - no fix round |
+| Operator merge (me, via the API) | 18:08:04 | 5m wait: my polling interval, not work |
+| Release → deployment PR #21 | → 18:09:04 | 60s |
+| Plan on #21 | 18:09:07 → 18:10:19 | `Plan: 14 to add` - a true create |
+| Merge → apply | 18:10:41 → 18:19:57 | **9m 16s, failed** on `appdb` "already exists" |
+| Diagnosis, `app-stack` v0.3.2, recovery PR #22 | → 18:24:45 merged | ~5m |
+| Apply #22 (import + v0.3.2) → readiness gate green | 18:24:47 → 18:27:28 | 2m 41s |
+| **Prompt → running** | 17:56:30 → 18:27:28 | **30m 58s**, of which ~5m operator latency and ~7m failure and recovery |
+
+Checked against the live app: `/ready` → `migration: 20260929180049_AddItemDueDate`. With six items
+created through the API, `GET /items/overdue` returned exactly the two past-due open ones, oldest
+first; the item due today, a done item past its date, a future item and an undated item were absent.
+Clearing a due date (`PUT /items/{id}/due-date`) removed that item from the list.
+
+### The create failure was the app, not Postgres
+
+v0.3.1 (this morning) serialised the three Postgres child resources, on finding 23's guess that
+concurrent operations on a new server were the cause. The create failed identically, and this time
+the apply log's timestamps showed why:
+
+```
+18:18:29  azurerm_container_app.this: Creating...          (server ready; SSL setting starts too)
+18:18:50  azurerm_container_app.this: Creation complete
+18:19:47  ..._active_directory_administrator.app: Creation complete
+18:19:48  azurerm_postgresql_flexible_server_database.this: Creating...
+18:19:53  Error: ... databases/appdb already exists
+```
+
+The Container App had no dependency on the database, only on the server's FQDN. Its first revision's
+`migrate` init container started at once and retried until the app's identity became the server's
+administrator. **EF Core's `Migrate()` creates the database when it is missing**, and the identity is
+administrator, so the app created `appdb` in the second before Terraform did. Finding 21's create
+survived the same race by luck of timing.
+
+**Fix: `app-stack` v0.3.2** - the Container App `depends_on` the database and the administrator. The
+v0.3.1 ordering is kept (a Flexible Server takes one management operation at a time) but was not the
+cause. **Not yet proven by a clean create.** The deployment pins v0.3.2 since #22.
+
+The general form, for OQ-14: *anything the platform starts during an apply can create state
+Terraform expects to create itself.* The app's startup path is part of the infrastructure's create
+path whenever the app holds rights to create things - and here it is the database administrator
+(the POC's deliberate coarseness, §4.3 of the module README).
+
+### Recovery took three minutes because it was the second time
+
+Import block + pin bump in one PR (#22: `1 to import, 0 to add, 1 to change`), green gate, then a
+PR to remove the import (#23). The same recovery as #18/#19, by the same operator, with the plan
+shape already known. For the §2 user it is still impossible (OQ-14).
+
+### Smaller things
+
+- **The pin bump was merged with `[skip ci]`** (#20) so that a module change to a destroyed stack did
+  not create it outside the demo. It works because the apply triggers on push; it also means `master`
+  briefly described a stack no apply had seen. Acceptable for a destroyed stack, never for a live one.
+- **A permanent in-place diff:** every apply after a create shows `azurerm_container_app.this` changing
+  `workload_profile_name = "Consumption" -> null` plus empty `args`/`command` lists. Seen on #18,
+  #22 and #23; applies are green and the app keeps running. Plans run with `-refresh=false`
+  (finding 11), so it never settles. Harmless so far; setting `workload_profile_name = "Consumption"`
+  in the module would likely remove it.
+- **Tests, the third time** (findings 21, 23): the brief asked for tests through the endpoints. The
+  agent wrote an in-memory `IQueryable` test that composes `WhereOverdue(...).OrderBy(...)` itself -
+  so it would pass with the endpoint's ordering wrong - and two 503 checks. The code was right; the
+  tests could not have shown it. The template decides test strength, not the brief.
+- **The `destroy` workflow now verifies against Azure** (`78922bc`): it logs in again after the
+  destroy and fails unless `az group exists -n rg-<name>-<environment>` is `false` within 10 minutes.
+
+---
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
 - ~~Whether the agent can fix its own failed check~~ — answered in finding 23: yes, in one fresh round, for $0.38. Not yet seen: a CI-only failure it cannot reproduce locally, or a second round.
 - ~~How long prompt-to-running-app takes~~ — answered in finding 21: **8m 23s** for a change to an existing app, **18m 43s** when the stack has to be created. Not yet measured: a new app from nothing (new repo, new deployment), which needs repo provisioning (OQ-15).
-- Whether teardown is clean — partly (finding 20): the child-resource hang is fixed, but a destroy takes ~25 minutes and nothing verifies that it removed anything.
+- Whether teardown is clean — partly (finding 20): the child-resource hang is fixed, and since 29 September (finding 24) `destroy` fails unless Azure confirms the resource group is gone. A destroy still takes ~25 minutes.
+- **Whether a create from nothing succeeds without help** — not yet. Findings 23 and 24 both needed an import; v0.3.2 addresses the cause found in 24 and has not been through a create.
 - ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it was not, at `min_replicas = 0`. Since finding 19 it is, by the readiness gate.
 - **The escape hatch:** touched, not answered (finding 14). We now know the agent refuses gracefully and explains itself when a request exceeds the module. We still do not know what the *product* does at that moment, which remains the hardest question in the idea.
 - **What agent cost looks like at scale** (finding 14, OQ-18). One run is $0.65 of shadow API cost, dominated by context rather than output, and a follow-up question costs about as much as the original work. Untested: whether trimming the carried context after the tfvars is written materially changes that.

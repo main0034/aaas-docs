@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
-**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks  
-**Owner:** Martin Ingeson · **Last updated:** 2026-09-28 (v0.12)
+**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack (create needed recovery)  
+**Owner:** Martin Ingeson · **Last updated:** 2026-09-29 (v0.13)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -39,8 +39,13 @@ not translate, which would have been a 500 in production); the harness handed th
 fresh session, which fixed it in one round and reached a green readiness gate. **$0.38 per round,
 the same as the original push** — budget a fix round as one more run (D-23).
 
-**Not proven.** A clean create: the Phase 5 create failed on a Postgres child resource and needed
-a hand-written `import` to recover (OQ-14). A new application from nothing (repo provisioning, OQ-15). And green is not the
+**Proven on 2026-09-29 (Phase 6).** The whole chain from a destroyed stack in one sitting: request →
+agent PR (5m 25s, $0.79, green first push) → deployment PR → create → readiness gate → the feature
+checked against the live app, **30m 58s**. Except the create: it failed on the database and needed an
+`import` again. The cause was the application - its migration step created the database before
+Terraform could (OQ-14). Fixed in the module, not yet proven.
+
+**Not proven.** A clean create (the v0.3.2 fix above). A new application from nothing (repo provisioning, OQ-15). And green is not the
 same as correct: the first run shipped a filter bug its own tests could not see.
 
 **This document drifted from the build.** The POC documents do not reference it, which is how
@@ -432,6 +437,8 @@ commercial and start being legal.
   **2026-09-28:** asked explicitly for tests through the endpoint, the agent still wrote 503 checks
   and in-memory `IQueryable` tests, because the template says tests run without a database. The
   template decides test strength, not the brief.
+  **2026-09-29 (finding 24):** a third time, with a brief that asked for endpoint tests. The template
+  change (tests against CI's Postgres) is the next session's topic.
 - **OQ-6 — Cost control.** Per-customer budget caps, what happens at the cap, how cost is
   estimated *before* apply and shown to a non-technical user.
 - **OQ-7 — Data model evolution.** Mechanism settled by D-21 (expand-only, immutable,
@@ -472,7 +479,12 @@ commercial and start being legal.
   `23505: could not create unique index`. Someone has to translate "your two items called
   X share a name" and decide who opens the revert — us, automatically, or the customer by
   pressing something. Interacts with OQ-5.
-- **OQ-14 — Operations that fail unrecoverably.** **Update, 2026-09-28 (finding 23):** a *create*
+- **OQ-14 — Operations that fail unrecoverably.** **Update, 2026-09-29 (finding 24):** the create
+  failure of 23 recurred and its cause was found: the Container App's `migrate` init container created
+  the database itself (EF Core creates a missing one; the app's identity is administrator) one second
+  before Terraform tried to. Fixed by ordering (`app-stack` v0.3.2). The general form: *anything the
+  platform starts during an apply can create what Terraform expects to create* - the app's startup is
+  part of the create path while it holds rights to create things. **Update, 2026-09-28 (finding 23):** a *create*
   failed after 9 minutes on `appdb` "already exists" in Azure but not in state. Recovery was an
   `import` block in a PR, then a second PR to remove it: minutes for us, impossible for the §2 user.
   Fourth Postgres-child failure; the first on create. **Update, 2026-09-24 (finding 20):** the teardown
@@ -516,8 +528,8 @@ commercial and start being legal.
 
 > **This section is stale and needs rewriting.** Items 1 and 2 are superseded by D-13; the
 > rest was written before the POC existed. The current next step is in `STATUS.md`: run the
-> agent harness once, end to end, and time it. (Done 2026-09-26; fix-forward done 2026-09-28; the
-> next step is Phase 6, the recorded demo.)
+> agent harness once, end to end, and time it. (Done 2026-09-26; fix-forward done 2026-09-28; Phase 6
+> run 2026-09-29, unrecorded by choice. The next step is tests that prove behaviour - `NEXT-SESSION.md`.)
 
 1. ~~**Golden path spike on Scaleway.**~~ Superseded by D-13.
 2. ~~**Same spike on one Nordic provider.**~~ Superseded by D-13.

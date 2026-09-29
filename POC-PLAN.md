@@ -250,15 +250,15 @@ Phase 7 is deliberately last and deliberately open-ended. By that point everythi
 
 ## 9. Acceptance criteria
 
-- [ ] One natural-language request produces two PRs, in the right repos, with no hand-written code or Terraform.
-- [ ] App CI runs tests and builds an image tagged with the git SHA.
-- [ ] Merging the app PR automatically produces a deployment PR bumping `container_image`.
-- [ ] Merging the deployment PR produces a reachable HTTPS URL that successfully queries Postgres.
-- [ ] Postgres has no public endpoint; no credential appears in git, in plan output, or in logs.
-- [ ] A malformed request (bad SKU, missing owner tag) is rejected by schema or module validation — not by Azure.
-- [ ] A deliberately broken app change is caught by app CI before it reaches an image.
-- [ ] `destroy.yml` cleanly removes an entire deployment.
-- [ ] Wall-clock from prompt to running application is measured and recorded.
+- [x] One natural-language request produces two PRs, in the right repos, with no hand-written code or Terraform. *(Finding 24: app PR #11 by the agent, deployment PR #21 by the release workflow. The **create** then needed a hand-written import to recover - see the URL criterion.)*
+- [x] App CI runs tests and builds an image tagged with the git SHA. *(Findings 12, 21, 24: `aaas-app-demo:63ec008…`.)*
+- [x] Merging the app PR automatically produces a deployment PR bumping `container_image`. *(Findings 12, 21; 60s in finding 24.)*
+- [ ] Merging the deployment PR produces a reachable HTTPS URL that successfully queries Postgres. *(**On update: yes**, gated by the readiness check (findings 19, 21). **On create: not yet unaided** - findings 23 and 24 both failed on `appdb` and needed an import. Cause found in 24, fixed in `app-stack` v0.3.2, not yet proven by a create.)*
+- [x] Postgres has no public endpoint; no credential appears in git, in plan output, or in logs. *(Findings 9, 11; D-14: Entra-only, no credential exists.)*
+- [x] A malformed request (bad SKU, missing owner tag) is rejected by schema or module validation — not by Azure. *(Finding 6; the agent refuses before that in finding 14.)*
+- [x] A deliberately broken app change is caught by app CI before it reaches an image. *(Finding 23: `test` red on an untranslatable query, fixed forward. Caveat: CI only catches what the tests look at - findings 21, 23, 24.)*
+- [x] `destroy.yml` cleanly removes an entire deployment. *(Finding 20; since 29 September it also verifies against Azure that the resource group is gone.)*
+- [x] Wall-clock from prompt to running application is measured and recorded. *(Finding 21: 8m 23s update, 18m 43s create; finding 24: 30m 58s including a failed create and recovery.)*
 
 ---
 
