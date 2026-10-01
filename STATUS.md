@@ -99,16 +99,12 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: RUNNING** unless Martin destroyed it after the session (~$17-20/month, mostly Postgres).
-  Created 1 October by `apply` run 36893894974, updated by #24 (image `55b18eb`). `destroy.yml` fails unless
-  `az group exists -n rg-demo-dev` is `false`. The operator token cannot start `destroy` (403); use the GitHub UI.
-  URL: `https://ca-demo-dev.bluemoss-21197de3.swedencentral.azurecontainerapps.io` (changes every create)
-- `deployments/dev/demo/` pins `app-stack` **v0.3.2** and image `55b18eb` (`aaas-app-demo/master`: endpoint tests),
-  schema `AddItemDueDate`
-- **`aaas-app-demo` PR #13 merged** (`0ac9d66`, the agent's priority list) and deployment PR #25 merged, but
-  **its apply failed on the state lock** (merged before its plan finished; finding 25). Nothing changed in Azure:
-  the live revision is still `55b18eb`. Recovery: push `3678a7a` (lock timeout) to `aaas-deployments` `master`,
-  then re-run apply 36906975587 from the UI
+- **Infrastructure: DESTROYED** after the session (`destroy` run 36908084546, started 18:36Z on 1 October;
+  check it is green - it verifies `az group exists -n rg-demo-dev` is `false`). Nothing should be billing.
+- `deployments/dev/demo/` pins `app-stack` **v0.3.2** and image `0ac9d66` (`aaas-app-demo/master`: PR #13, the priority
+  list), schema `AddItemDueDate`. **`0ac9d66` has never been applied**: its apply failed on the state lock and was not
+  re-run before the destroy. The next `apply` (a create) is its first deployment
+- `aaas-deployments` `master` has `-lock-timeout=10m` on plan and apply (`5378c12`, finding 25)
 - All six repos are public (needed for branch protection on the free plan)
 - `aaas-app-demo` `master` has a ruleset: PR required, squash only, `test` + `build` required and
   strict, no force-push or deletion (created 26 September)

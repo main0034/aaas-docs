@@ -34,17 +34,16 @@ green is wrong**. Hidden acceptance tests measure that deterministically (D-17),
 
 ## Before the session - Martin
 
-1. **Make sure PR #13 is live:** push `3678a7a` (lock timeout) to `aaas-deployments` `master` and re-run
-   apply 36906975587 if not done already. `/items/priority` should answer.
-2. **Infrastructure:** destroy it if the gap will be more than a few days (~$17–20/month). If it is
-   destroyed, start an `apply` from the UI at the start of the session. Runs can do without a live
-   stack until the last step, but the deploy check needs one.
+1. **Start `apply` from the UI** on `deployments/dev/demo` at the start of the session (~22 minutes). The
+   stack was destroyed on 1 October, and this create is also the **first deployment of `0ac9d66`** (PR #13):
+   its own apply failed on the state lock and was never re-run. Runs can proceed meanwhile; the
+   calibration step needs `/items/priority` live.
 
 ## State to verify before starting
 
 - Last `apply`/`destroy` on `aaas-deployments`, and whether `rg-demo-dev` exists. It matches what Martin said.
-- `aaas-app-demo` `master` is `0ac9d66` or later (PR #13). The image pinned in tfvars matches, and the
-  last apply is green (it failed on the state lock on 1 October - finding 25).
+- `aaas-app-demo` `master` is `0ac9d66` or later (PR #13); tfvars pins it. The 1 October `destroy` is green.
+- Martin's `apply`: green, 14 created, readiness gate green, and `GET /items/priority` answers.
 - `aaas-app-template` `master` has `tests/App.Tests/Postgres/` and the `endpoint tests` CI step.
 - No `index.lock` / `HEAD.lock` / `tmp_obj_*` / `maintenance.lock` in any repo's `.git`.
 - `gh` works in the linked shell (reinstall into `$HOME/bin` if the session home is new — STATUS.md).
