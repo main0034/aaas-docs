@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
-**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack (create needed recovery)  
-**Owner:** Martin Ingeson · **Last updated:** 2026-09-29 (v0.13)
+**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows  
+**Owner:** Martin Ingeson · **Last updated:** 2026-10-01 (v0.14)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -43,10 +43,16 @@ the same as the original push** — budget a fix round as one more run (D-23).
 agent PR (5m 25s, $0.79, green first push) → deployment PR → create → readiness gate → the feature
 checked against the live app, **30m 58s**. Except the create: it failed on the database and needed an
 `import` again. The cause was the application - its migration step created the database before
-Terraform could (OQ-14). Fixed in the module, not yet proven.
+Terraform could (OQ-14). Fixed in the module (`app-stack` v0.3.2).
 
-**Not proven.** A clean create (the v0.3.2 fix above). A new application from nothing (repo provisioning, OQ-15). And green is not the
-same as correct: the first run shipped a filter bug its own tests could not see.
+**Proven on 2026-10-01.** A clean create on v0.3.2: 14 resources, no import, ~22 minutes (18 of them the
+Container App Environment). And **tests that prove behaviour** (D-24): the app's endpoint tests run
+against a real Postgres in CI, and an agent briefed without any mention of tests wrote four that assert
+exactly which rows come back. One of them was wrong; a fix round corrected the *assertion*, which was
+right that time and is how a real bug would go green another time (OQ-5).
+
+**Not proven.** A new application from nothing (repo provisioning, OQ-15). Whether green is *correct*
+across briefs bigger than one endpoint - the next session measures it.
 
 **This document drifted from the build.** The POC documents do not reference it, which is how
 five weeks of Azure-specific work happened while §9 still said "spike Scaleway first".
@@ -312,6 +318,10 @@ change the data model repeatedly and the customer's data must survive it (D-21):
 The image contract is therefore: listen on `$PORT`, `/health` without the database, non-root,
 and accept the single argument `migrate`.
 
+Routes are tested **against a real Postgres** (D-24): every new or changed route gets an endpoint test
+that seeds rows, calls the route and asserts exactly which rows come back, each test in its own
+database cloned from a migrated template. CI fails if any endpoint test is skipped or none ran.
+
 ---
 
 ## 5. High-level architecture
@@ -380,6 +390,7 @@ loop. See OQ-4 and OQ-5 — this is the topic for the next session.
 | D-21 | Migrations: **EF Core, run in a `migrate` init container**, immutable once merged, expand-only, CI-enforced | 2026-09-21 | Resolves OQ-13. CI cannot reach the private database (D-15) and holds no DB rights; running in the app process would break the health contract; a Container Apps Job needs `local-exec` ordering. The init container orders migrate-before-start per revision for free, and Single revision mode keeps the old revision serving if it fails. Requires a workload-profile Consumption environment — the only kind where init containers get the managed identity. `app-stack` v0.3.0 |
 | D-22 | **A successful `terraform apply` is not evidence that a deployment works.** Every apply, including the first, is followed by a readiness gate that asks the *platform* whether the new revision runs: it forces a replica, then requires `runningState = Running` and `latestReadyRevisionName` = the new revision, then `/ready` → `database: ok`. On failure the pipeline goes red, the init container's `[migrate] FAILED:` line is fetched from Log Analytics onto the deployment PR, and nothing rolls back automatically — the old revision keeps serving and recovery is a revert PR | 2026-09-23 | Amended from 2026-09-22, which had the gate assert `/ready` reports the expected migration. That cannot work: after a failed deploy the *old* revision answers, and it has nothing pending. Proven on 23 September (finding 19): red on a live-data migration failure 6 minutes after the apply finished, cause included; green on create (11s) and on the revert (37s). Fail-and-stop because an automatic rollback would change Azure outside git (D-5) |
 | D-23 | **Fix-forward runs in the harness, not in the agent's turn: a fresh session per round, at most two rounds, and the harness never merges** | 2026-09-28 | Waiting for CI is not model work, so the harness polls for free and reads checks per commit. A fresh session gets the request, diff stat and trimmed log only — finding 14's "the cost is context". Proven in one round for $0.38, equal to the original push (finding 23). Merging stays with a human until OQ-5 is settled, because green is still not correct |
+| D-24 | **Routes are tested against a real Postgres, one cloned database per test; the agent writes these tests but does not run them** | 2026-10-01 | Three runs (findings 21, 23, 24) passed tests that could not see a wrong route; the template's "no database in tests" decided test strength, not the brief. Now `EndpointTest` + CI's `postgres:16`, `--fail-skips on` and `--minimum-expected-tests 1` (a skipped or empty suite is red). Per test, not per class: per class failed 10 of 11 natural tests on shared rows; a clone is ~0.1s. The harness gets no Postgres - CI runs them and fix-forward (D-23) handles red, ~$0.29 a round. Six planted route bugs all went red; the agent wrote such tests unprompted (finding 25) |
 | D-19 | **This is a build-to-learn exercise, not a business in formation** | 2026-09-20 | Stated preference: play with the technology rather than settle the commercial model. The commercial and go-to-market open questions are parked rather than deleted, so the build proceeds without them blocking and the thinking is not lost. Revisit when there is something worth selling |
 
 ---
@@ -437,8 +448,12 @@ commercial and start being legal.
   **2026-09-28:** asked explicitly for tests through the endpoint, the agent still wrote 503 checks
   and in-memory `IQueryable` tests, because the template says tests run without a database. The
   template decides test strength, not the brief.
-  **2026-09-29 (finding 24):** a third time, with a brief that asked for endpoint tests. The template
-  change (tests against CI's Postgres) is the next session's topic.
+  **2026-09-29 (finding 24):** a third time, with a brief that asked for endpoint tests.
+  **2026-10-01 (finding 25, D-24):** fixed in the template; the agent wrote exact-row endpoint tests
+  unprompted. The new risk is the fix round: it corrected a wrong *test* by editing its assertion until
+  CI agreed. Right that time; with the code wrong it turns a caught bug green. Before auto-merge, either
+  a fix round may not weaken an existing assertion (a deterministic diff check, D-17), or correctness is
+  checked by tests the agent never sees. The next session measures the latter.
 - **OQ-6 — Cost control.** Per-customer budget caps, what happens at the cap, how cost is
   estimated *before* apply and shown to a non-technical user.
 - **OQ-7 — Data model evolution.** Mechanism settled by D-21 (expand-only, immutable,
@@ -479,7 +494,8 @@ commercial and start being legal.
   `23505: could not create unique index`. Someone has to translate "your two items called
   X share a name" and decide who opens the revert — us, automatically, or the customer by
   pressing something. Interacts with OQ-5.
-- **OQ-14 — Operations that fail unrecoverably.** **Update, 2026-09-29 (finding 24):** the create
+- **OQ-14 — Operations that fail unrecoverably.** **Update, 2026-10-01 (finding 25):** the v0.3.2
+  ordering fix is proven by a clean create. **Update, 2026-09-29 (finding 24):** the create
   failure of 23 recurred and its cause was found: the Container App's `migrate` init container created
   the database itself (EF Core creates a missing one; the app's identity is administrator) one second
   before Terraform tried to. Fixed by ordering (`app-stack` v0.3.2). The general form: *anything the
@@ -529,7 +545,8 @@ commercial and start being legal.
 > **This section is stale and needs rewriting.** Items 1 and 2 are superseded by D-13; the
 > rest was written before the POC existed. The current next step is in `STATUS.md`: run the
 > agent harness once, end to end, and time it. (Done 2026-09-26; fix-forward done 2026-09-28; Phase 6
-> run 2026-09-29, unrecorded by choice. The next step is tests that prove behaviour - `NEXT-SESSION.md`.)
+> run 2026-09-29, unrecorded by choice; tests that prove behaviour 2026-10-01. The next step is Phase 7,
+> measured against acceptance tests the agent does not see - `NEXT-SESSION.md`.)
 
 1. ~~**Golden path spike on Scaleway.**~~ Superseded by D-13.
 2. ~~**Same spike on one Nordic provider.**~~ Superseded by D-13.
