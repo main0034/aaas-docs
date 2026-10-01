@@ -865,13 +865,107 @@ shape already known. For the §2 user it is still impossible (OQ-14).
 
 ---
 
+## 25. Tests that prove behaviour: endpoint tests against Postgres, and the agent writes them unprompted
+
+1 October 2026. Template and demo tests now call routes against a real Postgres. One agent run
+with a brief that never mentions tests. Before it: the v0.3.2 clean create.
+
+### The clean create: proven, and 22 minutes of it was one resource
+
+`apply` run 36893894974 (dispatched from the UI on the destroyed stack): `Plan: 14 to add`,
+**14 added, no "already exists", no import, no re-run**. The order finding 24 asked for:
+`azurerm_postgresql_flexible_server_database.this: Creation complete after 16s` *before*
+`azurerm_container_app.this: Creating...` (21s). Readiness gate green, `/ready` → `database: ok`,
+`managed-identity`, `AddItemDueDate`. `POC-PLAN.md` §9 is now fully ticked.
+
+The apply step took **21m 46s**, of which the **Container App Environment alone was 18m 27s**. The
+Postgres chain ran beside it in ~7m 41s (server 6m 8s, SSL 15s, AD admin 1m 2s, database 16s). The
+module's serialisation is not the cost; the workload-profile environment is, and it varies run to
+run (finding 21's whole create was 18m 43s including the agent). Budget a create at 10–25 minutes.
+
+### The fixture
+
+- `TEST_POSTGRES` (a connection string) is the only switch. CI sets it on the `test` job, which now
+  has a `postgres:16` service. Unset, endpoint tests **skip** with a message.
+- An assembly fixture creates `app_test_template_<guid>` once and applies the app's own migrations to
+  it. **Each test** clones its own database from it (`CREATE DATABASE … TEMPLATE`) and drops it after.
+- `EndpointTest` is the base class: `SeedAsync(rows…)`, `Client`, and an inherited
+  `Category=Endpoint` trait (a custom `ITraitAttribute` with `Inherited = true` — a `[Trait]` on an
+  abstract base class is *also* inherited in xUnit v3, but the custom attribute makes it explicit).
+- CI runs two steps: `--filter-not-trait "Category=Endpoint"`, then
+  `--filter-trait "Category=Endpoint" --fail-skips on --minimum-expected-tests 1`. Proven locally:
+  no database → skip becomes a failure (exit 2); a filter that matches nothing → exit 8. A green
+  `endpoint tests` step therefore means at least one route test ran against Postgres.
+
+**Per test, not per class — changed after Martin had chosen per class.** Ten natural tests ("seed two
+rows, expect exactly two back") in one class with a shared database: **10 of 11 failed** on each
+other's rows. Clone ~0.1s, drop ~0.15s; 11 endpoint tests took 5.8s locally, 8 took 3.2s in CI. An
+agent would have hit the per-class failure on its first test file.
+
+xUnit v3 / MTP spelling that cost two attempts: options go straight after `dotnet test` (no `--`),
+and `--fail-skips` takes a value (`on`). Without the value the run exits 5 with zero tests.
+
+### The planted bugs
+
+Demo: the 503 checks and in-memory `IQueryable` tests replaced by 8 endpoint tests (PR #12). Each
+bug planted in the route code, run, reverted:
+
+| Planted bug | New suite |
+|---|---|
+| overdue list ordered newest-due first | red |
+| an item due today counted as overdue (`<=`) | red |
+| filter applied after `Take(100)` | red |
+| search case-sensitive | red (2 tests) |
+| list oldest first | red (3 tests) |
+| **old suite, filter after `Take`** | **15/15 green** |
+
+The old suite contained a test *named* for the filter-before-`Take` bug. It composed the query itself
+over a `List<Item>`, so the route could do anything. That is finding 21/23/24's weakness in one line.
+
+### The agent run
+
+Brief `briefs/item-priority.md`: open items ordered by priority, no-priority last, ties newest first,
+optional cutoff. **No mention of tests.** Run `20261001T180920Z`, `session-1001.command`.
+
+- PR #13 in **155s, $0.45**: `/items/priority`, two query extensions, and
+  `ItemPriorityEndpointTests` — **4 endpoint tests, unprompted**, asserting exact titles in order with
+  rows that must not come back (a done item, priorities below the cutoff, unprioritised items).
+- CI **red**: `Expected "p2", Actual "p1"`. The *test* was wrong (`["p2","p1"]` for "priority 2 or
+  better"); the code was right. The agent could not have seen it: endpoint tests skip in the harness.
+- Fix round 1 (fresh session, 101s, $0.29): corrected the expected order, pushed, **green**; CI ran
+  **12 endpoint tests, 0 skipped**. Total **7m 20s, $0.74**, 1 policy refusal. Not merged — D-23.
+
+Read independently: the fix was correct (the brief, and the same file's first test, both put
+priority 1 first). **But the fix round's move was to edit an assertion until CI agreed with the
+code.** Here the code was right. With the code wrong and the test right, the same move turns a
+caught bug green. This is the new risk OQ-5 has to account for, and a fix round is where it lives.
+
+Cost of writing tests the agent cannot run: one fix round (~$0.29 here). As argued at the start of
+the session, cheaper than a Postgres in the harness — but it means a red endpoint test is more likely
+to be a wrong *test* than before.
+
+### Smaller things
+
+- **Policy false positive:** `git commit -F /dev/stdin <<'EOF'` with a message starting `fix:` was
+  refused as the command `fix:`. The agent fell back to a file. Same family as the `nuget` path one.
+- **A deployment PR merged before its own plan finished, and the apply failed on the state lock.**
+  #25 (PR #13's image) was merged 7s after its plan started; apply 36906975587 hit the plan's lock and
+  failed in 39s with nothing changed - the old revision kept serving. Plan and apply have separate
+  concurrency groups, so the lock is the only thing serialising them, and `aaas-deployments` has **no
+  ruleset**: nothing stopped a merge before `gate`. Fix: `-lock-timeout=10m` on both (`3678a7a`, to push
+  to `master` by Martin, then re-run the apply). A ruleset requiring `gate` is the stronger fix.
+- **Unauthenticated GitHub API is 60 requests/hour per IP, shared with Martin's machine.** Polling a
+  run every 10 seconds exhausted it in ~10 minutes and blinded the session for 40. Job logs need
+  authentication anyway, API or web. Since this session the linked shell has `gh` with the operator
+  token; poll at a minute, not ten seconds.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
-- ~~Whether the agent can fix its own failed check~~ — answered in finding 23: yes, in one fresh round, for $0.38. Not yet seen: a CI-only failure it cannot reproduce locally, or a second round.
+- ~~Whether the agent can fix its own failed check~~ — answered in finding 23: yes, in one fresh round, for $0.38. Finding 25 saw a CI-only failure it could not reproduce locally, fixed in one round - by editing a test's assertion, which was right that time. Not yet seen: a second round.
 - ~~How long prompt-to-running-app takes~~ — answered in finding 21: **8m 23s** for a change to an existing app, **18m 43s** when the stack has to be created. Not yet measured: a new app from nothing (new repo, new deployment), which needs repo provisioning (OQ-15).
 - Whether teardown is clean — partly (finding 20): the child-resource hang is fixed, and since 29 September (finding 24) `destroy` fails unless Azure confirms the resource group is gone. A destroy still takes ~25 minutes.
-- **Whether a create from nothing succeeds without help** — not yet. Findings 23 and 24 both needed an import; v0.3.2 addresses the cause found in 24 and has not been through a create.
+- ~~Whether a create from nothing succeeds without help~~ — answered in finding 25: yes, on `app-stack` v0.3.2, 14 added with no import. 22 minutes, 18 of them the Container App Environment.
 - ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it was not, at `min_replicas = 0`. Since finding 19 it is, by the readiness gate.
 - **The escape hatch:** touched, not answered (finding 14). We now know the agent refuses gracefully and explains itself when a request exceeds the module. We still do not know what the *product* does at that moment, which remains the hardest question in the idea.
 - **What agent cost looks like at scale** (finding 14, OQ-18). One run is $0.65 of shadow API cost, dominated by context rather than output, and a follow-up question costs about as much as the original work. Untested: whether trimming the carried context after the tfvars is written materially changes that.

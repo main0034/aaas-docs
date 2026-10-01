@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 29 September 2026, at the end of the Phase 6 session: the whole chain ran from a destroyed stack, except that the create needed an import - and the cause turned out to be the app itself. Start here in a new conversation.
+Written 1 October 2026, at the end of the endpoint-tests session: the clean create is proven, a green check now means routes returned the right rows from a real Postgres, and the agent wrote such tests unprompted. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -37,7 +37,11 @@ Written 29 September 2026, at the end of the Phase 6 session: the whole chain ra
 
 - **Phase 6 — the demo, not recorded by decision.** One run from a destroyed stack (finding 24): brief `item-due.md` → agent PR #11 in 5m 25s, $0.79, CI green first push → deployment PR #21 → create **failed on `appdb` "already exists"** → import recovery (#22) → readiness gate green → overdue list verified against the live app. **Prompt → running 30m 58s**, ~7m of it the failure and recovery. The cause: the app's `migrate` init container created the database before Terraform did (EF Core `Migrate()` creates a missing database). Fixed in `app-stack` v0.3.2, **not yet proven by a create**. `POC-PLAN.md` §9: eight of nine ticked, the unticked one is exactly this
 
-Verified working on 29 September: `GET /items/overdue` and `/ready` → `migration: 20260929180049_AddItemDueDate`. On 28 September: `GET /items?q=milk&open=true` against the deployed app. Before that, on 26 September: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260926142702_MarkItemDone"}`
+- **Clean create on `app-stack` v0.3.2** (1 October, finding 25) — 14 added, no import, the database before the Container App. `POC-PLAN.md` §9 is fully ticked. 21m 46s, 18m 27s of it the Container App Environment
+
+- **Tests that prove behaviour** (1 October, finding 25) — template #3 and demo #12: endpoint tests against CI's `postgres:16`, one cloned database per test, `--fail-skips on` and `--minimum-expected-tests 1` so a skipped or absent suite is red. Six planted route bugs all went red; the old demo suite stayed 15/15 green on the one it was named for. `AGENT.md` requires exact-row assertions with a worked example. **The agent then wrote 4 endpoint tests from a brief that never mentioned tests** (PR #13, $0.74, 7m 20s), one of them wrong; one fix round corrected it
+
+Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, `AddItemDueDate` on the fresh create. On 29 September: `GET /items/overdue` and `/ready` → `migration: 20260929180049_AddItemDueDate`. On 28 September: `GET /items?q=milk&open=true` against the deployed app. Before that, on 26 September: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260926142702_MarkItemDone"}`
 
 
 ## Not started
@@ -47,14 +51,13 @@ Verified working on 29 September: `GET /items/overdue` and `/ready` → `migrati
 
 ## Next step
 
-Per `NEXT-SESSION.md`: first a **clean create on `app-stack` v0.3.2** (the one unticked §9 item), then
-**tests that prove behaviour** - CI's Postgres available to the app's tests, in the template and the
-demo, so a green check means the endpoint returns the right rows. Three runs (findings 21, 23, 24)
-wrote tests that could not have caught a wrong endpoint, whatever the brief asked. Competing:
+Per `NEXT-SESSION.md`: **Phase 7, measured** - is green correct? Operator-written acceptance tests the
+agent never sees, run against its PR after CI, over a few briefs of increasing size. Finding 25 showed
+the agent's tests are now real, and also that a fix round will edit an assertion until CI agrees. Competing:
 
 - **OQ-21 — "immutable once applied", not "once merged".** Unchanged.
 - **The permanent `workload_profile_name` diff** on the Container App (finding 24). Harmless so far.
-- **Phase 7** — open-ended code generation. Should start from tests that mean something.
+- **OQ-5 — automatic merge.** Discussable now; the Phase 7 numbers are what it should be decided on.
 
 Running the agent again, for reference:
 
@@ -96,24 +99,27 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: DESTROY PENDING** - created 29 September for the demo, destroy started by Martin at
-  the end of the session. `destroy.yml` now fails unless `az group exists -n rg-demo-dev` is `false`, so a
-  green destroy is Azure's answer, not Terraform's. **Check the last `destroy` run is green before
-  assuming nothing is billing.** The operator token cannot start `destroy` (403); use the GitHub UI.
-  Last URL: `https://ca-demo-dev.happytree-6c12fdba.swedencentral.azurecontainerapps.io` (changes every create)
-- `deployments/dev/demo/` pins `app-stack` **v0.3.2** and image `63ec008` (`aaas-app-demo/master`: due dates),
-  schema `AddItemDueDate`. `imports.tf` does not exist (removed by #23)
+- **Infrastructure: RUNNING** unless Martin destroyed it after the session (~$17-20/month, mostly Postgres).
+  Created 1 October by `apply` run 36893894974, updated by #24 (image `55b18eb`). `destroy.yml` fails unless
+  `az group exists -n rg-demo-dev` is `false`. The operator token cannot start `destroy` (403); use the GitHub UI.
+  URL: `https://ca-demo-dev.bluemoss-21197de3.swedencentral.azurecontainerapps.io` (changes every create)
+- `deployments/dev/demo/` pins `app-stack` **v0.3.2** and image `55b18eb` (`aaas-app-demo/master`: endpoint tests),
+  schema `AddItemDueDate`
+- **`aaas-app-demo` PR #13 merged** (`0ac9d66`, the agent's priority list) and deployment PR #25 merged, but
+  **its apply failed on the state lock** (merged before its plan finished; finding 25). Nothing changed in Azure:
+  the live revision is still `55b18eb`. Recovery: push `3678a7a` (lock timeout) to `aaas-deployments` `master`,
+  then re-run apply 36906975587 from the UI
 - All six repos are public (needed for branch protection on the free plan)
 - `aaas-app-demo` `master` has a ruleset: PR required, squash only, `test` + `build` required and
   strict, no force-push or deletion (created 26 September)
 - `aaas-app-template`: ruleset and repo settings now agree on squash (fixed 28 September)
 - GHCR package `aaas-app-demo` is public, so `registry_username` is `""`
-- Module tags: `v0.3.1` (Postgres children serialised - not the fix), **`v0.3.2`** (Container App waits for the database - the fix, unproven on create). Pinned: v0.3.2
+- Module tags: `v0.3.1` (Postgres children serialised - not the fix), **`v0.3.2`** (Container App waits for the database - proven on create, finding 25). Pinned: v0.3.2
 - Three tokens in the `aaas` folder: `.claude-oauth-token-dont-delete` (the harness's Claude login), `.github_PAT_dont_delete` (operator, all repos, no Workflows, no
   Actions write) and `.aaas-agent-PAT-dont-delete` (agent: `aaas-deployments` + `aaas-app-demo`
   only; refused on `aaas-agent` and `aaas-docs`)
 - Merged branches safe to delete: `recover/demo-appdb-import`, `chore/remove-appdb-import`,
-  `recover/demo-appdb-import-2`, `chore/remove-appdb-import-2`, `deploy/demo-63ec008`, `deploy/rooms` on `aaas-deployments`; `ci/no-fake-db` on the app and template; the agent's
+  `recover/demo-appdb-import-2`, `chore/remove-appdb-import-2`, `deploy/demo-63ec008`, `deploy/demo-55b18eb`, `deploy/rooms` on `aaas-deployments`; `ci/no-fake-db` and `test/endpoint-tests` on the app and template; the agent's
   `feat/*` branches on `aaas-app-demo` (not `feat/notebook` — PR #6, never merge)
 
 ## Things to remember
@@ -129,7 +135,11 @@ trusting the wrong layer.
 - **A PR-scoped token cannot push `.github/workflows/`** without the Workflows permission — keep it that way for anything an agent holds (finding 19). Probed on 26 September: 403.
 - **Merge on green checks, checked by name.** The ruleset enforces it on `aaas-app-demo` now; the operator token is admin, so do not rely on the ruleset alone.
 - **A run sees only its own directory.** `run.sh` mounts `runs/<id>`, not `runs/`; a run that could read earlier runs copied their code (finding 23).
-- **A create that fails on `appdb` "already exists"** is recovered by an `import` block in the deployment directory, applied, then removed in a second PR - not by a re-run, and not by destroy (findings 23, 24). The cause was the app creating the database (finding 24); v0.3.2 should make it unnecessary.
+- **A create that fails on `appdb` "already exists"** is recovered by an `import` block in the deployment directory, applied, then removed in a second PR - not by a re-run, and not by destroy (findings 23, 24). The cause was the app creating the database (finding 24); v0.3.2 fixed it (finding 25).
+- **Endpoint tests skip without `TEST_POSTGRES`**, including in the agent harness. CI fails on a skip and on zero endpoint tests. To run them locally: `TEST_POSTGRES="Host=localhost;Username=postgres;Password=…" dotnet test`.
+- **Read a fix round's diff for edited assertions.** A fix round will change a test's expected value until CI agrees (finding 25). Right once; it is also exactly how a real bug goes green.
+- **Wait for `gate` before merging a deployment PR.** `aaas-deployments` has no ruleset, so nothing enforces it; a merge during the plan fails the apply on the state lock (finding 25).
+- **Use `gh` in the linked shell, not the unauthenticated API.** `$HOME/bin/gh` with `GH_TOKEN` from `.github_PAT_dont_delete`; the shell's home is per session, so reinstall it (one tarball from the cli/cli releases, linux arm64). Unauthenticated polling hit the 60/hour limit in ten minutes (finding 25).
 - **Anything the platform starts during an apply can create what Terraform expects to create.** The app is database administrator; its startup is part of the create path (finding 24).
 - **`[skip ci]` in a squash-merge title stops `apply`.** Used once (#20) to pin a module on a destroyed stack. Never on a live one: `master` would describe something no apply has seen.
 - **Every apply after a create shows `1 to change`** on the Container App (`workload_profile_name` → null). Known and harmless so far (finding 24).
