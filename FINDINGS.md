@@ -948,6 +948,12 @@ to be a wrong *test* than before.
 
 - **Policy false positive:** `git commit -F /dev/stdin <<'EOF'` with a message starting `fix:` was
   refused as the command `fix:`. The agent fell back to a file. Same family as the `nuget` path one.
+- **A deployment PR merged before its own plan finished, and the apply failed on the state lock.**
+  #25 (PR #13's image) was merged 7s after its plan started; apply 36906975587 hit the plan's lock and
+  failed in 39s with nothing changed - the old revision kept serving. Plan and apply have separate
+  concurrency groups, so the lock is the only thing serialising them, and `aaas-deployments` has **no
+  ruleset**: nothing stopped a merge before `gate`. Fix: `-lock-timeout=10m` on both (`3678a7a`, to push
+  to `master` by Martin, then re-run the apply). A ruleset requiring `gate` is the stronger fix.
 - **Unauthenticated GitHub API is 60 requests/hour per IP, shared with Martin's machine.** Polling a
   run every 10 seconds exhausted it in ~10 minutes and blinded the session for 40. Job logs need
   authentication anyway, API or web. Since this session the linked shell has `gh` with the operator

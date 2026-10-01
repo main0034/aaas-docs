@@ -34,8 +34,8 @@ green is wrong**. Hidden acceptance tests measure that deterministically (D-17),
 
 ## Before the session - Martin
 
-1. **Decide on `aaas-app-demo` PR #13** (the agent's priority list, green after one fix round). Merge
-   it — and its deployment PR — or close it. Either way, say which. It is the calibration brief below.
+1. **Make sure PR #13 is live:** push `3678a7a` (lock timeout) to `aaas-deployments` `master` and re-run
+   apply 36906975587 if not done already. `/items/priority` should answer.
 2. **Infrastructure:** destroy it if the gap will be more than a few days (~$17–20/month). If it is
    destroyed, start an `apply` from the UI at the start of the session. Runs can do without a live
    stack until the last step, but the deploy check needs one.
@@ -43,8 +43,8 @@ green is wrong**. Hidden acceptance tests measure that deterministically (D-17),
 ## State to verify before starting
 
 - Last `apply`/`destroy` on `aaas-deployments`, and whether `rg-demo-dev` exists. It matches what Martin said.
-- `aaas-app-demo` `master` is `55b18eb` or later (endpoint tests), or later still if #13 was merged.
-  The image pinned in tfvars matches.
+- `aaas-app-demo` `master` is `0ac9d66` or later (PR #13). The image pinned in tfvars matches, and the
+  last apply is green (it failed on the state lock on 1 October - finding 25).
 - `aaas-app-template` `master` has `tests/App.Tests/Postgres/` and the `endpoint tests` CI step.
 - No `index.lock` / `HEAD.lock` / `tmp_obj_*` / `maintenance.lock` in any repo's `.git`.
 - `gh` works in the linked shell (reinstall into `$HOME/bin` if the session home is new — STATUS.md).
@@ -108,3 +108,5 @@ green is wrong**. Hidden acceptance tests measure that deterministically (D-17),
 - **Run drivers:** `session-1001.command` is current (watches `session-1001-logs/RERUN`). `phase6.command`,
   `phase4c.sh`, `notebook-agent.command` and `notebook-app.command` are superseded and can be deleted.
 - **Template and demo `test/endpoint-tests` branches** are merged and can be deleted.
+- **`aaas-deployments` has no ruleset.** A deployment PR can be merged before `gate`; finding 25's failed
+  apply. The lock timeout makes it wait; a ruleset requiring `gate` would make it impossible.

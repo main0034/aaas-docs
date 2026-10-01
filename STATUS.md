@@ -105,8 +105,10 @@ trusting the wrong layer.
   URL: `https://ca-demo-dev.bluemoss-21197de3.swedencentral.azurecontainerapps.io` (changes every create)
 - `deployments/dev/demo/` pins `app-stack` **v0.3.2** and image `55b18eb` (`aaas-app-demo/master`: endpoint tests),
   schema `AddItemDueDate`
-- **`aaas-app-demo` PR #13 is open** (`feat/priority-list`, the agent's priority list, CI green after one fix round).
-  Not merged - D-23. Merging it deploys `/items/priority`; no migration
+- **`aaas-app-demo` PR #13 merged** (`0ac9d66`, the agent's priority list) and deployment PR #25 merged, but
+  **its apply failed on the state lock** (merged before its plan finished; finding 25). Nothing changed in Azure:
+  the live revision is still `55b18eb`. Recovery: push `3678a7a` (lock timeout) to `aaas-deployments` `master`,
+  then re-run apply 36906975587 from the UI
 - All six repos are public (needed for branch protection on the free plan)
 - `aaas-app-demo` `master` has a ruleset: PR required, squash only, `test` + `build` required and
   strict, no force-push or deletion (created 26 September)
@@ -136,6 +138,7 @@ trusting the wrong layer.
 - **A create that fails on `appdb` "already exists"** is recovered by an `import` block in the deployment directory, applied, then removed in a second PR - not by a re-run, and not by destroy (findings 23, 24). The cause was the app creating the database (finding 24); v0.3.2 fixed it (finding 25).
 - **Endpoint tests skip without `TEST_POSTGRES`**, including in the agent harness. CI fails on a skip and on zero endpoint tests. To run them locally: `TEST_POSTGRES="Host=localhost;Username=postgres;Password=…" dotnet test`.
 - **Read a fix round's diff for edited assertions.** A fix round will change a test's expected value until CI agrees (finding 25). Right once; it is also exactly how a real bug goes green.
+- **Wait for `gate` before merging a deployment PR.** `aaas-deployments` has no ruleset, so nothing enforces it; a merge during the plan fails the apply on the state lock (finding 25).
 - **Use `gh` in the linked shell, not the unauthenticated API.** `$HOME/bin/gh` with `GH_TOKEN` from `.github_PAT_dont_delete`; the shell's home is per session, so reinstall it (one tarball from the cli/cli releases, linux arm64). Unauthenticated polling hit the 60/hour limit in ten minutes (finding 25).
 - **Anything the platform starts during an apply can create what Terraform expects to create.** The app is database administrator; its startup is part of the create path (finding 24).
 - **`[skip ci]` in a squash-merge title stops `apply`.** Used once (#20) to pin a module on a destroyed stack. Never on a live one: `master` would describe something no apply has seen.
