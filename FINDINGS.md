@@ -1013,6 +1013,64 @@ trim, #15). The hidden result is a comment on PR #16. The PR is not merged.
 **Policy refusals:** two, both pipes into `tail`/`grep` around `dotnet` (`dotnet build … | tail -5`,
 `dotnet restore … | grep …`). These are the same argument-as-command family as finding 25's.
 
+## 27. A spec-tester that never sees the code catches what the builder's tests missed
+
+4 October 2026, afternoon. Roadmap step 2a. A new harness task, `--task write-acceptance` (`aaas-agent`
+#3), writes acceptance tests from a brief alone. Its runbook, `aaas-deployments/agent/write-acceptance.md`,
+is its whole system prompt; `PROMPT.md` describes the builder, not this role.
+
+**Isolation.** Isolation is enforced, not requested. The app is cloned, then every ref except `master` is
+deleted, along with the remote (`workspace.isolate`, with a test showing a branch's commit is
+unreachable afterwards). The session gets no token. The policy refuses `gh` and git's network
+subcommands, and writes go only into `tests/App.Tests/Acceptance/`. It can compile but not run its
+tests, since there is no Postgres. Output lands in `runs/<id>/acceptance/` with a `NOTES.md` that lists
+every statement in the brief as tested, or untested with two readings.
+
+**Scoring.** The scoring is the operator's: each spec-tester file and the operator's hidden tests
+(finding 26) run side by side on each PR head and on one-line planted bugs (`acceptance/score/`).
+
+| Brief | PR | Spec-tester tests | False reds on PR head | Real defect | Planted bugs caught (spec / operator) | Run | Cost |
+|---|---|---|---|---|---|---|---|
+| `item-upcoming` | #14 | 13 | 0 | - | **4/4** / 4/4 | 4m 54s | $0.56 |
+| `item-tags` | #15 | 26 | 0 | `a15cd23` `/tags` → 500: **caught** | **4/4** / 4/4 | 6m 18s | $0.77 |
+| `projects` run 1 | #16 | 32 | 0 | trimmed 100-char name refused: **caught** | 2/3 / 3/3 | 6m 40s | $0.77 |
+| `projects` run 2 | #16 | 29 | 0 | same: **caught** | 2/3 / 3/3 | 4m 31s | $0.54 |
+| `item-priority` | #13 | 9 | 0 | - | 3/3 / 3/3 | 3m 38s | $0.42 |
+
+Planted bugs: window end exclusive, overdue included, default 3 days, same-day ties reversed; case-sensitive
+tag filter, 11 tags allowed, 31-character tag allowed, `/tags` reverse-sorted; percent rounded up, done
+items listed first, delete allowed when only done items remain; done items in the priority list, ties
+reversed, cutoff exclusive.
+
+**Totals: 0 false reds, both real defects caught, 15 of 17 planted bugs.** Five runs cost $3.07, with
+0 policy refusals; the builder's runs had two. The spec-tester wrote 2-3 times as many tests as the
+operator, and they were more granular.
+
+**The miss.** Both `projects` runs missed the same planted bug: "a project can be deleted only when it
+has no items" was tested with *open* items only. Done items are still items. This is the same shape
+as the builder's own miss in finding 26: a stated rule, tested on the obvious case and not the edge
+the wording implies. Two independent sessions missed it identically, so it is a blind spot of the
+runbook, not noise. It is cheap to name: "an exclusion or precondition stated about a set applies to
+every member, including done or otherwise filtered ones." Added to the runbook after the runs
+(`aaas-deployments` `master`), so the next measurement is not blind to it either.
+
+**Caveats.**
+- The runbook's rule "test an input valid only after the stated transformation" was written after
+  finding 26, which is exactly #16's bug, so catching #16 is partly the hint. The 17 planted bugs were
+  not hinted.
+- `item-priority` is contaminated: #13 is merged, so its route is on `master` and the spec-tester read
+  the parameter name from it. It counts as calibration only.
+- Writing to the Interface section matters. The one ambiguity the spec-tester raised in `item-upcoming`
+  (is `days=7.5` "not a number"?) it correctly left untested.
+
+**What it says.**
+- A model can write the acceptance gate, at roughly one builder run's cost ($0.42-0.77 against
+  $0.64-1.71), and without false reds on four real PRs. So far the role is better than the builder's
+  own tests and about as good as the operator's.
+- It does not close the gap; it moves it. Both writers share blind spots that come from the runbook.
+  The defence is a runbook that names the edge, and more briefs to find the next one.
+- Step 2b is worth building: the spec-tester's file as a required check the builder cannot read.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
@@ -1021,6 +1079,6 @@ trim, #15). The hidden result is a comment on PR #16. The PR is not merged.
 - Whether teardown is clean — partly (finding 20): the child-resource hang is fixed, and since 29 September (finding 24) `destroy` fails unless Azure confirms the resource group is gone. A destroy still takes ~25 minutes.
 - ~~Whether a create from nothing succeeds without help~~ — answered in finding 25: yes, on `app-stack` v0.3.2, 14 added with no import. 22 minutes, 18 of them the Container App Environment.
 - ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it was not, at `min_replicas = 0`. Since finding 19 it is, by the readiness gate.
-- **Whether green is correct** - partly (finding 26): 2 of 3 briefs, the largest went green with a stated boundary untested. Three runs; a direction, not a rate.
+- **Whether green is correct** - partly (finding 26): 2 of 3 briefs, the largest went green with a stated boundary untested. Three runs; a direction, not a rate. Finding 27: a spec-tester that never sees the code caught that defect and 15 of 17 planted bugs, with no false reds.
 - **The escape hatch:** touched, not answered (finding 14). We now know the agent refuses gracefully and explains itself when a request exceeds the module. We still do not know what the *product* does at that moment, which remains the hardest question in the idea.
 - **What agent cost looks like at scale** (finding 14, OQ-18). One run is $0.65 of shadow API cost, dominated by context rather than output, and a follow-up question costs about as much as the original work. Untested: whether trimming the carried context after the tfvars is written materially changes that.
