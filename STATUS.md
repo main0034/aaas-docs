@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 1 October 2026, at the end of the endpoint-tests session: the clean create is proven, a green check now means routes returned the right rows from a real Postgres, and the agent wrote such tests unprompted. Start here in a new conversation.
+Written 4 October 2026, at the end of the Phase 7 session. Green was measured against hidden acceptance tests over three briefs: two correct, and the largest green-but-wrong on a boundary it never tested. The product-level plan is now `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -41,23 +41,23 @@ Written 1 October 2026, at the end of the endpoint-tests session: the clean crea
 
 - **Tests that prove behaviour** (1 October, finding 25) — template #3 and demo #12: endpoint tests against CI's `postgres:16`, one cloned database per test, `--fail-skips on` and `--minimum-expected-tests 1` so a skipped or absent suite is red. Six planted route bugs all went red; the old demo suite stayed 15/15 green on the one it was named for. `AGENT.md` requires exact-row assertions with a worked example. **The agent then wrote 4 endpoint tests from a brief that never mentioned tests** (PR #13, $0.74, 7m 20s), one of them wrong; one fix round corrected it
 
+- **Phase 7, measured** (4 October, finding 26) — briefs now end with an *Interface* section; operator-written acceptance tests, hidden from the agent, scored three runs: `item-upcoming` #14 and `item-tags` #15 (one fix round) **green-correct**, `projects` #16 **green-but-wrong** (14/15: a name valid only after trimming is refused). Fix rounds edited 0 assertions. $0.64–1.71 per brief. Calibration on #13: 4/4. Tests in `aaas-agent/acceptance/` (untracked)
+
 Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, `AddItemDueDate` on the fresh create. On 29 September: `GET /items/overdue` and `/ready` → `migration: 20260929180049_AddItemDueDate`. On 28 September: `GET /items?q=milk&open=true` against the deployed app. Before that, on 26 September: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260926142702_MarkItemDone"}`
 
 
 ## Not started
 
 - **A new app from nothing** — new repo + first deployment + first app PR. Blocked on repo provisioning (OQ-15), deliberately out of scope so far
-- **Phase 7** — application code generation
 
 ## Next step
 
-Per `NEXT-SESSION.md`: **Phase 7, measured** - is green correct? Operator-written acceptance tests the
-agent never sees, run against its PR after CI, over a few briefs of increasing size. Finding 25 showed
-the agent's tests are now real, and also that a fix round will edit an assertion until CI agrees. Competing:
+Per `NEXT-SESSION.md` and roadmap step 2a in `AaaS-context.md` §9: **a spec-tester role.** A separate
+agent session writes acceptance tests from a brief's interface without seeing any code, measured against
+the operator's hidden tests and PRs #13–16. It needs no Azure and no new app runs. Competing:
 
-- **OQ-21 — "immutable once applied", not "once merged".** Unchanged.
+- **OQ-21 — "immutable once applied", not "once merged".** Unchanged; roadmap step 4.
 - **The permanent `workload_profile_name` diff** on the Container App (finding 24). Harmless so far.
-- **OQ-5 — automatic merge.** Discussable now; the Phase 7 numbers are what it should be decided on.
 
 Running the agent again, for reference:
 
@@ -74,8 +74,8 @@ export GH_TOKEN=...                  # fine-grained PAT: deployments + the app r
 
 From a linked cloud session, Claude cannot type into Terminal (click-only) and the linked
 shell has no Docker: the run goes in a script Martin starts once, logged through `script(1)`
-(finding 21). `phase6.command` in the `aaas` folder is the current one: started once, it
-re-runs the harness whenever `phase6-logs/RERUN` appears (one line of `run.sh` arguments) and stops on `phase6-logs/STOP`. Edit its first `run_once` line for a new brief.
+(finding 21). `phase7.command` in the `aaas` folder is the current one: a watcher only. Started once, it
+runs the harness whenever `phase7-logs/RERUN` appears (one line of `run.sh` arguments) and stops on `phase7-logs/STOP`. A RERUN written before the double-click runs at once.
 
 `runs/<id>/report.md` carries the wall clock, the tool histogram, the cost
 breakdown and every policy refusal. Read the refusals: a refusal that recurs is
@@ -99,12 +99,15 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: DESTROYED** after the session (`destroy` run 36908084546, started 18:36Z on 1 October;
-  check it is green - it verifies `az group exists -n rg-demo-dev` is `false`). Nothing should be billing.
+- **Infrastructure: DESTROYED** since 1 October (`destroy` run 36908084546, green). Phase 7 did not need it,
+  and no apply ran on 4 October. Nothing is billing.
 - `deployments/dev/demo/` pins `app-stack` **v0.3.2** and image `0ac9d66` (`aaas-app-demo/master`: PR #13, the priority
   list), schema `AddItemDueDate`. **`0ac9d66` has never been applied**: its apply failed on the state lock and was not
   re-run before the destroy. The next `apply` (a create) is its first deployment
 - `aaas-deployments` `master` has `-lock-timeout=10m` on plan and apply (`5378c12`, finding 25)
+- **`aaas-app-demo` has three open, unmerged agent PRs:** #14 (`/items/upcoming`), #15 (tags, with a migration),
+  #16 (projects, with a migration; hidden-test failure in a comment). Independent of each other, all off `0ac9d66`.
+  Merging any of them opens a deployment PR, and its apply on a destroyed stack is a create (~22 minutes)
 - All six repos are public (needed for branch protection on the free plan)
 - `aaas-app-demo` `master` has a ruleset: PR required, squash only, `test` + `build` required and
   strict, no force-push or deletion (created 26 September)
@@ -140,6 +143,11 @@ trusting the wrong layer.
 - **`[skip ci]` in a squash-merge title stops `apply`.** Used once (#20) to pin a module on a destroyed stack. Never on a live one: `master` would describe something no apply has seen.
 - **Every apply after a create shows `1 to change`** on the Container App (`workload_profile_name` → null). Known and harmless so far (finding 24).
 - **Git from the linked shell leaves lock files** (`index.lock`, `HEAD.lock`, `tmp_obj_*`) — delete them after every commit, and use `GIT_OPTIONAL_LOCKS=0` for read commands.
+
+- **Score a PR with hidden tests** in Claude's container: .NET 10 via `dotnet-install.sh --channel 10.0`, the
+  distro's Postgres 16 (`initdb -A trust`), then `aaas-agent/acceptance/run-acceptance.sh <checkout> <brief>`.
+  Style analyzers are switched off for the acceptance files only.
+- **A brief needs an Interface section** (routes, parameters, status codes, shape) or hidden tests cannot know what to call (finding 26).
 
 ## Open product questions, still parked
 

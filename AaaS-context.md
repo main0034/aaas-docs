@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
-**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows  
-**Owner:** Martin Ingeson · **Last updated:** 2026-10-01 (v0.14)
+**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows · green measured against hidden tests: right 2 of 3  
+**Owner:** Martin Ingeson · **Last updated:** 2026-10-04 (v0.16)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -51,11 +51,19 @@ against a real Postgres in CI, and an agent briefed without any mention of tests
 exactly which rows come back. One of them was wrong; a fix round corrected the *assertion*, which was
 right that time and is how a real bug would go green another time (OQ-5).
 
-**Not proven.** A new application from nothing (repo provisioning, OQ-15). Whether green is *correct*
-across briefs bigger than one endpoint - the next session measures it.
+**Measured on 2026-10-04 (Phase 7).** Is green correct? Acceptance tests written from each brief before the
+run, never visible to the agent, run against its PR after CI. Small and medium briefs (a filtered route; tags
+with a migration, a join table and a red-then-fixed round): **correct**. The large brief (a second entity with
+progress and delete rules): **green but wrong**. A boundary the brief stated ("100 characters after trimming")
+was validated before trimming, and none of the agent's 20 tests covered it. Its tests were right; one was
+missing. Fix rounds edited no assertions. $0.64-1.71 per brief.
+
+**Not proven.** A new application from nothing (repo provisioning, OQ-15). Who writes the independent
+acceptance tests, and where they live so CI runs them but the coding agent cannot see them (OQ-23).
 
 **This document drifted from the build.** The POC documents do not reference it, which is how
-five weeks of Azure-specific work happened while §9 still said "spike Scaleway first".
+five weeks of Azure-specific work happened while §9 still said "spike Scaleway first". §9 is now
+the ordered roadmap and `NEXT-SESSION.md` points at a line of it.
 Sections 3.3, 4.1, 4.2 and 4.3 were corrected on 2026-09-20 and the decisions below now
 reflect what exists. Keeping them in step is a per-session obligation, not an occasional one.
 
@@ -454,6 +462,16 @@ commercial and start being legal.
   CI agreed. Right that time; with the code wrong it turns a caught bug green. Before auto-merge, either
   a fix round may not weaken an existing assertion (a deterministic diff check, D-17), or correctness is
   checked by tests the agent never sees. The next session measures the latter.
+  **2026-10-04 (finding 26) - position: not on the agent's CI alone.** 1 of 3 briefs, the largest, went green
+  with a stated rule broken, caught only by tests written from the spec by someone else. Auto-merge needs
+  those as a required check (OQ-23). The fix-round assertion guard is still unsized: 0 edits in 1 round.
+- **OQ-23 — Independent acceptance tests: who writes them, and where they live.** Finding 26's correctness
+  signal came from tests derived from the brief's interface by someone who never saw the code. For auto-merge
+  (OQ-5) that has to be a role, not the operator: a separate session that writes tests from the spec, before
+  or without seeing the PR. It also needs a place the pipeline can run them as a required check and the coding
+  agent cannot read: not the app repo, since it is public and the next run would see them. Deterministic at
+  execution (D-17), but authored by a model, so the open part is how often *its* tests are wrong. The cost is
+  real: writing them took as long as the runs.
 - **OQ-6 — Cost control.** Per-customer budget caps, what happens at the cap, how cost is
   estimated *before* apply and shown to a non-technical user.
 - **OQ-7 — Data model evolution.** Mechanism settled by D-21 (expand-only, immutable,
@@ -540,20 +558,33 @@ commercial and start being legal.
 
 ---
 
-## 9. Next actions
+## 9. Roadmap
 
-> **This section is stale and needs rewriting.** Items 1 and 2 are superseded by D-13; the
-> rest was written before the POC existed. The current next step is in `STATUS.md`: run the
-> agent harness once, end to end, and time it. (Done 2026-09-26; fix-forward done 2026-09-28; Phase 6
-> run 2026-09-29, unrecorded by choice; tests that prove behaviour 2026-10-01. The next step is Phase 7,
-> measured against acceptance tests the agent does not see - `NEXT-SESSION.md`.)
+The ordered plan the build follows. `NEXT-SESSION.md` holds one step of it and names which line it
+serves; if the two disagree, one of them is wrong and gets fixed at session end. Rewritten
+2026-10-04 (the previous §9 still said "spike Scaleway first" five weeks after D-13).
 
-1. ~~**Golden path spike on Scaleway.**~~ Superseded by D-13.
-2. ~~**Same spike on one Nordic provider.**~~ Superseded by D-13.
-3. **Resolve OQ-3c** by talking to 5–10 SMBs in the target segment. Ask what they would
-   pay for "data stays in Sweden, Swedish company" versus not caring. This is cheaper than
-   any of the engineering above and it invalidates or confirms the whole positioning.
-4. **Then** the agent hosting session (OQ-4). Where apps run constrains where agents run.
+**Where the planes stand (§5).** Source of truth: done, for an app that already exists. Delivery:
+done and hardened (plan, apply, readiness gate D-22, clean create, destroy). Agent: the app-developer
+role works with fix-forward (D-23); intake, infra-as-a-role and operator do not exist and hosting is
+open (OQ-4). Conversation plane: nothing. Control plane: nothing, and blocked in practice by OQ-16.
+
+**Everything since 23 September** closed one reason green did not mean works (D-22, Phase 4c, D-23,
+OQ-14, D-24). They are one question - can a merge happen without a human (OQ-5) - which is the hinge
+of the product: the §2 user cannot review a PR.
+
+| # | Step | Serves | Done when |
+|---|---|---|---|
+| 1 | ~~**Phase 7: is green correct?**~~ Done 2026-10-04 (finding 26): 2 of 3 correct; the largest green-but-wrong on an untested stated boundary | OQ-5 | ✓ |
+| 2a | **A spec-tester role.** A separate agent session writes acceptance tests from a brief's interface, never seeing the code. Measured against the operator's hidden tests and PRs #13-16 | OQ-23 | Its tests catch #16 and pass #13-15, or the disagreements are explained |
+| 2b | **Act on it.** The spec-tester's tests run as a required check the coding agent cannot read; auto-merge for a defined class of change if 2a holds | OQ-5, OQ-23 | A merge happens without a human for at least one class of change, or a recorded reason why not yet |
+| 3 | **A new app from nothing** - repo, ruleset, identity, federated credentials, deployment directory, verified after creation | OQ-15 | One command or workflow takes a name to a running empty app, and asserts its identity before the first deploy |
+| 4 | **Version visibility** - module/archetype version tags on resources, and what each estate has applied | OQ-16, OQ-21 | "What is each app running" is answered from Azure metadata; the migration guard becomes "immutable once applied" |
+| 5 | **The first missing plane** - intake + conversation (OQ-4, OQ-22) or control plane (OQ-8). Chosen by interest when step 4 is done (D-19) | §5 | One end-to-end path through that plane, however thin |
+
+Off the path, picked up only if they block a step: the `workload_profile_name` diff, a ruleset on
+`aaas-deployments`, `.terraform.lock.hcl`, the policy's argument-as-command false positives.
+Parked under D-19: everything commercial, including OQ-3c.
 
 ## 10. Working conventions for this document
 
