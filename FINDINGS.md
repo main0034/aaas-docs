@@ -959,6 +959,60 @@ to be a wrong *test* than before.
   authentication anyway, API or web. Since this session the linked shell has `gh` with the operator
   token; poll at a minute, not ten seconds.
 
+## 26. Is green correct? Hidden acceptance tests: 2 of 3 briefs correct, the largest green-but-wrong
+
+4 October 2026. Phase 7, measured. For each brief, acceptance tests were written from the brief alone
+**before** the run, kept in Claude's container (never in an app repo or its CI), and run against the
+agent's PR head after CI. Each brief ends with a fixed *Interface* section (routes, parameters, status
+codes, response shape), so the tests score behaviour, not naming. Tests are black-box: rows are created
+and read only over HTTP, on the template's `EndpointTest` fixture (Postgres 16, .NET 10.0.401, ~5 minutes
+to set up in the container). Files: `aaas-agent/acceptance/` (untracked).
+
+**Calibration.** `item-priority` (PR #13, merged): 4/4 hidden tests green. The same tests went red on a
+planted tie-break bug (`ThenBy` instead of `ThenByDescending`). The route name came from the PR because
+that brief predates the Interface section.
+
+| Brief | Size | PR | Agent CI | Fix rounds | Hidden tests | Score | Wall | Cost |
+|---|---|---|---|---|---|---|---|---|
+| `item-upcoming` | one route, a window, 400s | #14 | green first push | 0 | 10/10 | **green-correct** | 5m 41s | $0.64 |
+| `item-tags` | migration, join table, normalisation, filter, aggregate | #15 | red → green | 1 | 10/10 | **green-correct** | 11m 51s | $1.71 |
+| `projects` | second entity, FK, progress %, ordering, delete rules | #16 | green first push | 0 | 14/15 | **green-but-wrong** | 6m 58s | $0.96 |
+
+Runs `20261004T093840Z`, `…094440Z`, `…095643Z`, via `phase7.command`. All three with `--fix-rounds 2`.
+**Assertions edited by fix rounds: 0.** The one fix round (#15, 101s, $0.27) changed only
+`TagEndpoints.cs`.
+
+**What the red was (#15).** `GET /tags` used `GroupBy(...).Select(g => new TagSummary(g.Key, g.Count()))`,
+which EF Core cannot translate: a 500 on every call. The agent's own endpoint test for `/tags` caught it in
+CI, and the fix round rewrote it as an anonymous-type projection. This was the second untranslatable query
+in five runs (finding 23 was the first). The harness cannot see this class of bug because endpoint tests
+skip without Postgres. CI and fix-forward handle it for ~$0.27 a round, as D-24 assumed.
+
+**What the green-but-wrong was (#16).** The brief says a project name is "1 to 100 characters **after
+trimming**". `[StringLength(100, MinimumLength = 1)]` on the request record validates the *raw* input before
+the handler trims it, so `" " + 100×"y" + " "` gets a 400. The agent tested trimming ("  Trimmed  ") and
+101 characters, but not a name valid only after trimming. Its tests were not wrong; one was **missing**,
+at the exact boundary the brief stated. The same agent got the equivalent rule right for tags (30 after
+trim, #15). The hidden result is a comment on PR #16. The PR is not merged.
+
+**What it says.**
+
+- **The failure mode has moved.** Earlier findings were wrong tests (21, 23, 24) or a wrong assertion
+  "fixed" (25). Here the agent's tests were right and fairly thorough (5, 23 and 20 tests). The gap is
+  coverage: a stated boundary nobody tested. More test-writing instruction does not close that. Tests
+  derived from the spec by someone other than the author do.
+- **Green-but-wrong scaled with size**, 0 of 2 small and medium and 1 of 1 large. Three runs are a
+  direction, not a rate.
+- **No fix round edited an assertion**, so the guard from finding 25 had nothing to fire on. Still
+  unsized: once in two fix rounds across two sessions.
+- **Agent cost rose with brief size, not linearly:** $0.64 / $1.44 + $0.27 / $0.96. The medium brief
+  was the most expensive (477s, 58 turns) because it involved a migration, a join table and a red round.
+- **Writing the hidden tests took about as long as the three runs.** 39 tests for 4 briefs. Each
+  needed the Interface section to exist first, which is the intake/spec role from §6 doing its job.
+
+**Policy refusals:** two, both pipes into `tail`/`grep` around `dotnet` (`dotnet build … | tail -5`,
+`dotnet restore … | grep …`). These are the same argument-as-command family as finding 25's.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
@@ -967,5 +1021,6 @@ to be a wrong *test* than before.
 - Whether teardown is clean — partly (finding 20): the child-resource hang is fixed, and since 29 September (finding 24) `destroy` fails unless Azure confirms the resource group is gone. A destroy still takes ~25 minutes.
 - ~~Whether a create from nothing succeeds without help~~ — answered in finding 25: yes, on `app-stack` v0.3.2, 14 added with no import. 22 minutes, 18 of them the Container App Environment.
 - ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it was not, at `min_replicas = 0`. Since finding 19 it is, by the readiness gate.
+- **Whether green is correct** - partly (finding 26): 2 of 3 briefs, the largest went green with a stated boundary untested. Three runs; a direction, not a rate.
 - **The escape hatch:** touched, not answered (finding 14). We now know the agent refuses gracefully and explains itself when a request exceeds the module. We still do not know what the *product* does at that moment, which remains the hardest question in the idea.
 - **What agent cost looks like at scale** (finding 14, OQ-18). One run is $0.65 of shadow API cost, dominated by context rather than output, and a follow-up question costs about as much as the original work. Untested: whether trimming the carried context after the tfvars is written materially changes that.
