@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
-**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows · green measured against hidden tests: right 2 of 3  
-**Owner:** Martin Ingeson · **Last updated:** 2026-10-04 (v0.16)
+**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows · green measured against hidden tests: right 2 of 3 · a spec-tester that never sees the code caught the miss  
+**Owner:** Martin Ingeson · **Last updated:** 2026-10-04 (v0.17)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -58,8 +58,14 @@ progress and delete rules): **green but wrong**. A boundary the brief stated ("1
 was validated before trimming, and none of the agent's 20 tests covered it. Its tests were right; one was
 missing. Fix rounds edited no assertions. $0.64-1.71 per brief.
 
-**Not proven.** A new application from nothing (repo provisioning, OQ-15). Who writes the independent
-acceptance tests, and where they live so CI runs them but the coding agent cannot see them (OQ-23).
+**Measured on 2026-10-04, afternoon (finding 27).** A spec-tester role. A separate agent session writes
+the acceptance tests from the brief and physically cannot see the change: it gets `master` only, with no
+remote, no token and no `gh`. Over five runs on four PRs: **no false reds, both real defects caught (the
+#16 miss included), 15 of 17 planted bugs**, at $0.42-0.77 a run. Both runs on the largest brief missed
+the same rule. The writers share the runbook's blind spots, so the runbook is where the next gain is.
+
+**Not proven.** A new application from nothing (repo provisioning, OQ-15). Where the spec-tester's tests live, so
+CI runs them as a required check but the builder cannot read them (OQ-23).
 
 **This document drifted from the build.** The POC documents do not reference it, which is how
 five weeks of Azure-specific work happened while §9 still said "spike Scaleway first". §9 is now
@@ -472,6 +478,9 @@ commercial and start being legal.
   agent cannot read: not the app repo, since it is public and the next run would see them. Deterministic at
   execution (D-17), but authored by a model, so the open part is how often *its* tests are wrong. The cost is
   real: writing them took as long as the runs.
+  **2026-10-04 (finding 27): who - answered.** A spec-tester session writes them from the brief, with no
+  false reds and 15/17 planted bugs, at about one builder run's cost. Still open: *where*. That is roadmap
+  step 2b.
 - **OQ-6 — Cost control.** Per-customer budget caps, what happens at the cap, how cost is
   estimated *before* apply and shown to a non-technical user.
 - **OQ-7 — Data model evolution.** Mechanism settled by D-21 (expand-only, immutable,
@@ -576,7 +585,7 @@ of the product: the §2 user cannot review a PR.
 | # | Step | Serves | Done when |
 |---|---|---|---|
 | 1 | ~~**Phase 7: is green correct?**~~ Done 2026-10-04 (finding 26): 2 of 3 correct; the largest green-but-wrong on an untested stated boundary | OQ-5 | ✓ |
-| 2a | **A spec-tester role.** A separate agent session writes acceptance tests from a brief's interface, never seeing the code. Measured against the operator's hidden tests and PRs #13-16 | OQ-23 | Its tests catch #16 and pass #13-15, or the disagreements are explained |
+| 2a | ~~**A spec-tester role.**~~ Done 2026-10-04 (finding 27): no false reds, #16 caught, 15/17 planted bugs | OQ-23 | ✓ |
 | 2b | **Act on it.** The spec-tester's tests run as a required check the coding agent cannot read; auto-merge for a defined class of change if 2a holds | OQ-5, OQ-23 | A merge happens without a human for at least one class of change, or a recorded reason why not yet |
 | 3 | **A new app from nothing** - repo, ruleset, identity, federated credentials, deployment directory, verified after creation | OQ-15 | One command or workflow takes a name to a running empty app, and asserts its identity before the first deploy |
 | 4 | **Version visibility** - module/archetype version tags on resources, and what each estate has applied | OQ-16, OQ-21 | "What is each app running" is answered from Azure metadata; the migration guard becomes "immutable once applied" |

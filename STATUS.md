@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 4 October 2026, at the end of the Phase 7 session. Green was measured against hidden acceptance tests over three briefs: two correct, and the largest green-but-wrong on a boundary it never tested. The product-level plan is now `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
+Written 4 October 2026, afternoon, at the end of roadmap step 2a. Morning, Phase 7: green was right on 2 of 3 briefs, measured by hidden acceptance tests. Afternoon: a spec-tester session that never sees the code wrote acceptance tests as good as the operator's (finding 27). The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -43,6 +43,8 @@ Written 4 October 2026, at the end of the Phase 7 session. Green was measured ag
 
 - **Phase 7, measured** (4 October, finding 26) — briefs now end with an *Interface* section; operator-written acceptance tests, hidden from the agent, scored three runs: `item-upcoming` #14 and `item-tags` #15 (one fix round) **green-correct**, `projects` #16 **green-but-wrong** (14/15: a name valid only after trimming is refused). Fix rounds edited 0 assertions. $0.64–1.71 per brief. Calibration on #13: 4/4. Tests in `aaas-agent/acceptance/` (untracked)
 
+- **Spec-tester role** (4 October, finding 27): `--task write-acceptance` (`aaas-agent` #3, runbook `aaas-deployments/agent/write-acceptance.md`). Isolated by construction: `master` only, no remote, no token, no `gh`, writes only into `tests/App.Tests/Acceptance/`. Five runs: 0 false reds on PRs #13-16, both real defects caught, 15/17 planted bugs, $0.42-0.77 a run
+
 Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, `AddItemDueDate` on the fresh create. On 29 September: `GET /items/overdue` and `/ready` → `migration: 20260929180049_AddItemDueDate`. On 28 September: `GET /items?q=milk&open=true` against the deployed app. Before that, on 26 September: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260926142702_MarkItemDone"}`
 
 
@@ -52,12 +54,17 @@ Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, 
 
 ## Next step
 
-Per `NEXT-SESSION.md` and roadmap step 2a in `AaaS-context.md` §9: **a spec-tester role.** A separate
-agent session writes acceptance tests from a brief's interface without seeing any code, measured against
-the operator's hidden tests and PRs #13–16. It needs no Azure and no new app runs. Competing:
+Per `NEXT-SESSION.md`, roadmap step 2b: **the spec-tester's tests as a required check the builder cannot
+read**, then a first auto-merge for one defined class of change. This needs a private store for the tests
+and a workflow change Martin pushes. Competing:
 
 - **OQ-21 — "immutable once applied", not "once merged".** Unchanged; roadmap step 4.
 - **The permanent `workload_profile_name` diff** on the Container App (finding 24). Harmless so far.
+
+```bash
+./run.sh --task write-acceptance --app-repo aaas-app-demo --request @briefs/projects.md --non-interactive
+```
+writes `runs/<id>/acceptance/<Name>Acceptance.cs` and `NOTES.md`. No PR, no token use beyond the clone.
 
 Running the agent again, for reference:
 
@@ -147,6 +154,7 @@ trusting the wrong layer.
 - **Score a PR with hidden tests** in Claude's container: .NET 10 via `dotnet-install.sh --channel 10.0`, the
   distro's Postgres 16 (`initdb -A trust`), then `aaas-agent/acceptance/run-acceptance.sh <checkout> <brief>`.
   Style analyzers are switched off for the acceptance files only.
+- **Score spec-tester tests** with `aaas-agent/acceptance/score/score.py <brief> <file.cs>...` in Claude's container: it runs the operator's and each given file on the PR head and on the planted bugs in `mutants.py`. Start Postgres first; the container's stops when it idles (finding 27 lost a scoring run to it).
 - **A brief needs an Interface section** (routes, parameters, status codes, shape) or hidden tests cannot know what to call (finding 26).
 
 ## Open product questions, still parked
