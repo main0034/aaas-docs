@@ -93,4 +93,4 @@ merge without a human. Step 3 (a new app from nothing) is the alternative if you
   `\|` (finding 28).
 - **The permanent `workload_profile_name` diff**; **the operator token is admin**; **OQ-21**; **`gh pr close` refused by
   policy**; **no `.terraform.lock.hcl`**; **no ruleset on `aaas-deployments`**; **a capped run loses its work** (finding 22).
-- **Merged branches to delete:** `test/endpoint-tests` (template, demo), `feat/priority-list` (demo).
+- **Branches:** every merged branch is deleted. Open: the PR branches above, and `deploy/demo-97b30b4` (#26).
