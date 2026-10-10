@@ -1,0 +1,172 @@
+{
+ "brief": "item-tags",
+ "files": [
+  "a",
+  "b",
+  "o1"
+ ],
+ "good": {
+  "a": [
+   [],
+   28
+  ],
+  "b": [
+   [],
+   26
+  ],
+  "o1": [
+   [],
+   26
+  ]
+ },
+ "variants": {
+  "REAL #15 /tags 500": {
+   "a": [
+    [
+     "All_tags_count_includes_done_items",
+     "All_tags_count_per_tag_is_correct",
+     "All_tags_excludes_tags_with_no_items",
+     "All_tags_sorted_by_name"
+    ],
+    28
+   ],
+   "b": [
+    [
+     "Get_all_tags_excludes_tags_no_item_carries",
+     "Get_all_tags_item_count_includes_done_items",
+     "Get_all_tags_sorted_by_name"
+    ],
+    26
+   ],
+   "o1": [
+    [
+     "Get_all_tags_counts_done_items",
+     "Get_all_tags_excludes_uncarried_tags",
+     "Get_all_tags_sorted_by_name_with_item_counts"
+    ],
+    26
+   ]
+  },
+  "tag filter case-sensitive": {
+   "a": [
+    [
+     "Items_filter_by_tag_is_case_insensitive"
+    ],
+    28
+   ],
+   "b": [
+    [
+     "Get_items_by_tag_is_case_insensitive"
+    ],
+    26
+   ],
+   "o1": [
+    [
+     "Tag_filter_is_case_insensitive"
+    ],
+    26
+   ]
+  },
+  "11 tags allowed": {
+   "a": [
+    [
+     "Put_tags_11_tags_is_400"
+    ],
+    28
+   ],
+   "b": [
+    [
+     "Put_eleven_tags_is_refused"
+    ],
+    26
+   ],
+   "o1": [
+    [
+     "Eleven_tags_is_refused"
+    ],
+    26
+   ]
+  },
+  "31-char tag allowed": {
+   "a": [
+    [
+     "Put_tags_invalid_does_not_change_existing_tags",
+     "Put_tags_tag_of_31_chars_is_400"
+    ],
+    28
+   ],
+   "b": [
+    [
+     "Put_invalid_tags_item_keeps_existing_tags",
+     "Put_tag_of_31_characters_is_refused"
+    ],
+    26
+   ],
+   "o1": [
+    [
+     "Refused_put_keeps_existing_tags",
+     "Tag_of_31_chars_is_refused"
+    ],
+    26
+   ]
+  },
+  "/tags reverse-sorted": {
+   "a": [
+    [
+     "All_tags_sorted_by_name"
+    ],
+    28
+   ],
+   "b": [
+    [
+     "Get_all_tags_sorted_by_name"
+    ],
+    26
+   ],
+   "o1": [
+    [
+     "Get_all_tags_sorted_by_name_with_item_counts"
+    ],
+    26
+   ]
+  }
+ },
+ "hit": {
+  "REAL #15 /tags 500": {
+   "a": true,
+   "b": true,
+   "o1": true
+  },
+  "tag filter case-sensitive": {
+   "a": true,
+   "b": true,
+   "o1": true
+  },
+  "11 tags allowed": {
+   "a": true,
+   "b": true,
+   "o1": true
+  },
+  "31-char tag allowed": {
+   "a": true,
+   "b": true,
+   "o1": true
+  },
+  "/tags reverse-sorted": {
+   "a": true,
+   "b": true,
+   "o1": true
+  }
+ },
+ "caught": {
+  "a": 5,
+  "b": 5,
+  "o1": 5
+ },
+ "pairs": {
+  "a+b": 5,
+  "a+o1": 5,
+  "b+o1": 5
+ },
+ "n": 5
+}
