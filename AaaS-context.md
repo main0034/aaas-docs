@@ -605,9 +605,9 @@ of the product: the §2 user cannot review a PR.
 | 2a | ~~**A spec-tester role.**~~ Done 2026-10-04 (finding 27): no false reds, #16 caught, 15/17 planted bugs | OQ-23 | ✓ |
 | 2b | ~~**Act on it.**~~ Done 2026-10-10 (finding 28, D-25): the change record; hidden tests are part of the required check. No auto-merge: one spec-tester run in three missed a known defect | OQ-5, OQ-23 | ✓ (reason recorded) |
 | 2c | ~~**Two spec-testers per change**~~ Done 2026-10-10 (finding 29, D-26): pair 95% vs single 90%; #22 merged by the harness | OQ-5 | ✓ |
-| 3 | **A new app from nothing** - repo, ruleset, identity, federated credentials, deployment directory, verified after creation | OQ-15 | One command or workflow takes a name to a running empty app, and asserts its identity before the first deploy |
 | 4 | **Version visibility** - module/archetype version tags on resources, and what each estate has applied | OQ-16, OQ-21 | "What is each app running" is answered from Azure metadata; the migration guard becomes "immutable once applied" |
 | 5 | **The first missing plane** - intake + conversation (OQ-4, OQ-22) or control plane (OQ-8). Chosen by interest when step 4 is done (D-19) | §5 | One end-to-end path through that plane, however thin |
+| 6 | **A new app from nothing** (moved after 5 on 2026-10-10, by choice: the change loop matters more than onboarding while there is one app) - repo, ruleset, identity, federated credentials, deployment directory, verified after creation | OQ-15 | One command or workflow takes a name to a running empty app, and asserts its identity before the first deploy |
 
 Off the path, picked up only if they block a step: the `workload_profile_name` diff, a ruleset on
 `aaas-deployments`, `.terraform.lock.hcl`, the policy's argument-as-command false positives.
