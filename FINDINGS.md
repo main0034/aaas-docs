@@ -1071,6 +1071,77 @@ every member, including done or otherwise filtered ones." Added to the runbook a
   The defence is a runbook that names the edge, and more briefs to find the next one.
 - Step 2b is worth building: the spec-tester's file as a required check the builder cannot read.
 
+## 28. The change record: hidden tests as a CI gate, in the app repo, and the first two changes through it
+
+10 October 2026. Roadmap step 2b. Planned as a private `aaas-acceptance` repo read by the `aaas-bot` App
+token. Changed at the start of the session, at Martin's request: **briefs and acceptance tests live in the
+app repository**, as a record of every change, `changes/<date>-<name>/`. No new repo and no new token.
+
+**The design** (`aaas-agent` #4, #5; app and template #17, #4; D-25):
+
+1. The harness commits the request as `changes/<id>/brief.md` on branch `change/<id>` and pushes it.
+2. The spec-tester writes acceptance tests from `master`, in an isolated checkout (finding 27), with a
+   namespace unique to the change.
+3. Its checkout, its CLI session store and its transcript are then off disk; the tests are held in
+   memory. The builder runs in the same container and cannot find them (a test greps for them).
+4. The builder writes the change on `change/<id>` and opens the PR. The policy refuses writes to `changes/`.
+5. The harness commits the tests into `changes/<id>/`. The test project compiles `changes/**/*.cs`, so CI's
+   existing endpoint-test step runs them. No new job and no ruleset change.
+6. Fix rounds may read the tests. `scripts/check-changes.sh` (in `test`) fails a PR when a merged record
+   changes, when a commit without the harness's `AaaS-Change` trailer touches `changes/`, or when a record
+   has no tests yet. The harness also checks `changes/<id>/` is byte-identical to its own commit before it
+   reports green.
+
+After the squash merge, `master` has the request, the code and the tests that accepted it in one commit,
+and those tests keep running as regression tests. #13's brief and its 9 spec tests were backfilled.
+
+**The runs.**
+
+| Change | PR | Spec-tester | Builder | CI on the tests commit | Wall clock | Cost |
+|---|---|---|---|---|---|---|
+| `item-summary` (new brief, no migration) | #18 | 25 tests, 4m 25s, $0.61 | 5m 43s, $0.99 | **green, first push** (55 endpoint tests) | 17m 3s | $2.34* |
+| `projects` (re-run of #16, migration) | #19 | 26 tests, 5m 36s, $0.72 | 7m 19s, $1.38 | **green, first push** | 14m 34s | $2.10 |
+
+\* Includes a $0.74 fix round that should not have run. 0 policy refusals in the spec-tester runs.
+
+**How good were the gates?** Scored by the operator, as in finding 27:
+
+- `item-summary`: 9 planted bugs (a 10th, whitespace `q` treated as a term, turned out to be equivalent).
+  **7 caught.** Missed: done items counted at priority 2 (the test covers priority 1 only), and done items
+  counted under `"none"`. Both are the set-membership blind spot the runbook already names.
+- `projects`: the 3 planted bugs of finding 27, **3 caught**. That includes "delete allowed with only done
+  items", which both runs on 4 October missed. The runbook line added then worked.
+- `projects`, against #16's head, which has the real defect: **green, 26/26.** The test named
+  `Create_project_name_100_chars_after_trimming_is_accepted` sends 100 characters with no padding. Both
+  runs on 4 October caught this defect. So this gate would have passed #16.
+- #19 is correct anyway. The operator's 15 hidden tests pass on it, including the trimmed boundary. "Watch
+  #16's miss go red and get fixed" did not happen: this builder did not make the mistake.
+
+**Two harness bugs, both found by the first run and fixed in #5.**
+- **GitHub lags a push.** The harness read the PR head seconds after pushing the tests and got the builder's
+  commit. That commit is red by design ("no acceptance tests yet"), so a fix round started on a checkout
+  without the tests. Given an unexplained red, that round **tried to write this change's acceptance tests
+  itself**. The policy refused (`changes/` is protected); it stopped without pushing, and the harness then
+  saw the real head green. The harness now waits for the PR to report the tests commit. Cost: $0.74 and a
+  fix round in the report that did nothing.
+- **`/tmp` is a writable root for both roles**, and the spec-tester's checkout was under it. So the policy
+  no longer confined that session to its Acceptance directory. The checkout is now in `$HOME`, and the
+  test asserts a write to `src/` is refused.
+
+**What it says.**
+- **The plumbing works.** A request becomes a branch, hidden tests and a gate CI enforces, with nobody
+  touching the tests. It added no secret and needed one workflow change. Martin's redesign is simpler
+  than the planned one: the tests run in the existing job, and there is no checkout of another repo.
+- **The gate is only as good as one spec-tester run, and runs vary.** The same brief, a stronger runbook:
+  one blind spot closed, an older catch lost. Across 7 spec-tester runs: 0 false reds, 25 of 29 planted
+  bugs caught, and the one real boundary defect caught by 2 of 3 runs on its brief. A single run is not
+  yet a gate to merge on unseen.
+- **The union of independent runs is the cheap next lever.** Each run costs about $0.7. The misses so far
+  differ between runs of the same brief (trimming in one, done items in another), so two spec-testers
+  with their tests combined would have caught every real defect in findings 26-28. Unmeasured.
+- **An agent facing an unexplained red reaches for the guardrail.** The phantom fix round's first act was
+  to write the missing tests. The deterministic refusal held. Asking it not to would not have been enough.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
@@ -1079,6 +1150,6 @@ every member, including done or otherwise filtered ones." Added to the runbook a
 - Whether teardown is clean — partly (finding 20): the child-resource hang is fixed, and since 29 September (finding 24) `destroy` fails unless Azure confirms the resource group is gone. A destroy still takes ~25 minutes.
 - ~~Whether a create from nothing succeeds without help~~ — answered in finding 25: yes, on `app-stack` v0.3.2, 14 added with no import. 22 minutes, 18 of them the Container App Environment.
 - ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it was not, at `min_replicas = 0`. Since finding 19 it is, by the readiness gate.
-- **Whether green is correct** - partly (finding 26): 2 of 3 briefs, the largest went green with a stated boundary untested. Three runs; a direction, not a rate. Finding 27: a spec-tester that never sees the code caught that defect and 15 of 17 planted bugs, with no false reds.
+- **Whether green is correct** - partly (finding 26): 2 of 3 briefs, the largest went green with a stated boundary untested. Three runs; a direction, not a rate. Finding 27: a spec-tester that never sees the code caught that defect and 15 of 17 planted bugs, with no false reds. Finding 28: that check is now a CI gate in the app repo (the change record), and two changes passed it on first push - but one spec-tester run in three missed the boundary defect the other two caught. 25 of 29 planted bugs over seven runs.
 - **The escape hatch:** touched, not answered (finding 14). We now know the agent refuses gracefully and explains itself when a request exceeds the module. We still do not know what the *product* does at that moment, which remains the hardest question in the idea.
 - **What agent cost looks like at scale** (finding 14, OQ-18). One run is $0.65 of shadow API cost, dominated by context rather than output, and a follow-up question costs about as much as the original work. Untested: whether trimming the carried context after the tfvars is written materially changes that.
