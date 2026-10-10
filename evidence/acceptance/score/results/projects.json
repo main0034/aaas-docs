@@ -1,0 +1,223 @@
+{
+ "brief": "projects",
+ "files": [
+  "a",
+  "b",
+  "o1",
+  "o2",
+  "p"
+ ],
+ "good": {
+  "a": [
+   [],
+   33
+  ],
+  "b": [
+   [],
+   31
+  ],
+  "o1": [
+   [],
+   32
+  ],
+  "o2": [
+   [],
+   29
+  ],
+  "p": [
+   [],
+   26
+  ]
+ },
+ "variants": {
+  "REAL #16 trimmed name": {
+   "a": [
+    [
+     "Name_trimmed_to_100_characters_is_accepted"
+    ],
+    33
+   ],
+   "b": [
+    [
+     "Create_project_name_100_chars_after_trim_is_valid"
+    ],
+    31
+   ],
+   "o1": [
+    [
+     "Create_project_name_100_chars_after_trim_is_accepted"
+    ],
+    32
+   ],
+   "o2": [
+    [
+     "Create_project_padded_name_of_100_chars_after_trim_is_accepted"
+    ],
+    29
+   ],
+   "p": [
+    [],
+    26
+   ]
+  },
+  "percent rounds up": {
+   "a": [
+    [
+     "Name_trimmed_to_100_characters_is_accepted",
+     "Percent_done_is_rounded_down"
+    ],
+    33
+   ],
+   "b": [
+    [
+     "Create_project_name_100_chars_after_trim_is_valid",
+     "List_projects_includes_all_stats_fields",
+     "Percent_done_is_floored_not_rounded"
+    ],
+    31
+   ],
+   "o1": [
+    [
+     "Create_project_name_100_chars_after_trim_is_accepted",
+     "List_projects_returns_total_done_and_percentDone_rounded_down"
+    ],
+    32
+   ],
+   "o2": [
+    [
+     "Create_project_padded_name_of_100_chars_after_trim_is_accepted",
+     "Project_percent_done_rounds_down"
+    ],
+    29
+   ],
+   "p": [
+    [
+     "Get_projects_percentDone_rounds_down_not_nearest",
+     "Get_projects_total_done_and_percentDone_are_correct"
+    ],
+    26
+   ]
+  },
+  "done items first": {
+   "a": [
+    [
+     "Done_items_within_project_are_newest_first",
+     "Name_trimmed_to_100_characters_is_accepted",
+     "Project_page_lists_open_items_before_done_items"
+    ],
+    33
+   ],
+   "b": [
+    [
+     "Create_project_name_100_chars_after_trim_is_valid",
+     "Get_project_lists_open_items_before_done_items"
+    ],
+    31
+   ],
+   "o1": [
+    [
+     "Create_project_name_100_chars_after_trim_is_accepted",
+     "Get_project_done_items_most_recently_added_come_first",
+     "Get_project_lists_open_items_before_done_items"
+    ],
+    32
+   ],
+   "o2": [
+    [
+     "Create_project_padded_name_of_100_chars_after_trim_is_accepted",
+     "Get_project_lists_open_items_before_done_newest_first"
+    ],
+    29
+   ],
+   "p": [
+    [
+     "Get_project_open_items_before_done_newest_first_within_group"
+    ],
+    26
+   ]
+  },
+  "delete allowed with only done items": {
+   "a": [
+    [
+     "Delete_project_with_only_done_items_still_returns_409",
+     "Name_trimmed_to_100_characters_is_accepted"
+    ],
+    33
+   ],
+   "b": [
+    [
+     "Create_project_name_100_chars_after_trim_is_valid"
+    ],
+    31
+   ],
+   "o1": [
+    [
+     "Create_project_name_100_chars_after_trim_is_accepted"
+    ],
+    32
+   ],
+   "o2": [
+    [
+     "Create_project_padded_name_of_100_chars_after_trim_is_accepted"
+    ],
+    29
+   ],
+   "p": [
+    [
+     "Delete_project_with_only_done_items_returns_409"
+    ],
+    26
+   ]
+  }
+ },
+ "hit": {
+  "REAL #16 trimmed name": {
+   "a": true,
+   "b": true,
+   "o1": true,
+   "o2": true,
+   "p": false
+  },
+  "percent rounds up": {
+   "a": true,
+   "b": true,
+   "o1": true,
+   "o2": true,
+   "p": true
+  },
+  "done items first": {
+   "a": true,
+   "b": true,
+   "o1": true,
+   "o2": true,
+   "p": true
+  },
+  "delete allowed with only done items": {
+   "a": true,
+   "b": false,
+   "o1": false,
+   "o2": false,
+   "p": true
+  }
+ },
+ "caught": {
+  "a": 4,
+  "b": 3,
+  "o1": 3,
+  "o2": 3,
+  "p": 3
+ },
+ "pairs": {
+  "a+b": 4,
+  "a+o1": 4,
+  "a+o2": 4,
+  "a+p": 4,
+  "b+o1": 3,
+  "b+o2": 3,
+  "b+p": 4,
+  "o1+o2": 3,
+  "o1+p": 4,
+  "o2+p": 4
+ },
+ "n": 4
+}

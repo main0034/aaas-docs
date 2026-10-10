@@ -1,0 +1,259 @@
+{
+ "brief": "item-summary",
+ "files": [
+  "a",
+  "b",
+  "p"
+ ],
+ "good": {
+  "a": [
+   [],
+   18
+  ],
+  "b": [
+   [],
+   23
+  ],
+  "p": [
+   [],
+   25
+  ]
+ },
+ "variants": {
+  "dueSoon ends today+6": {
+   "a": [
+    [
+     "Due_soon_includes_today_plus_7"
+    ],
+    18
+   ],
+   "b": [
+    [
+     "Item_due_today_plus_7_is_due_soon"
+    ],
+    23
+   ],
+   "p": [
+    [
+     "Item_due_seven_days_from_today_is_due_soon"
+    ],
+    25
+   ]
+  },
+  "overdue includes today": {
+   "a": [
+    [
+     "Due_soon_includes_today",
+     "Search_narrows_open_done_overdue_due_soon_and_by_priority"
+    ],
+    18
+   ],
+   "b": [
+    [
+     "Item_due_today_is_due_soon_not_overdue",
+     "Search_narrows_overdue_and_due_soon"
+    ],
+    23
+   ],
+   "p": [
+    [
+     "Item_due_today_is_due_soon_not_overdue"
+    ],
+    25
+   ]
+  },
+  "dueSoon includes overdue": {
+   "a": [
+    [
+     "Overdue_item_is_not_also_counted_as_due_soon",
+     "Search_narrows_open_done_overdue_due_soon_and_by_priority"
+    ],
+    18
+   ],
+   "b": [
+    [
+     "Item_due_yesterday_is_overdue_not_due_soon",
+     "Search_narrows_overdue_and_due_soon"
+    ],
+    23
+   ],
+   "p": [
+    [
+     "Overdue_item_is_not_counted_as_due_soon"
+    ],
+    25
+   ]
+  },
+  "done counted at priority 2": {
+   "a": [
+    [],
+    18
+   ],
+   "b": [
+    [],
+    23
+   ],
+   "p": [
+    [],
+    25
+   ]
+  },
+  "open counts done": {
+   "a": [
+    [
+     "Open_counts_items_not_done_and_done_counts_items_marked_done",
+     "Search_narrows_open_done_overdue_due_soon_and_by_priority"
+    ],
+    18
+   ],
+   "b": [
+    [
+     "Open_count_excludes_done_items",
+     "Search_narrows_open_and_done_counts"
+    ],
+    23
+   ],
+   "p": [
+    [
+     "Done_item_is_excluded_from_open_overdue_and_due_soon",
+     "Open_count_is_items_not_done"
+    ],
+    25
+   ]
+  },
+  "q of 100 refused": {
+   "a": [
+    [
+     "Search_q_exactly_100_characters_is_accepted"
+    ],
+    18
+   ],
+   "b": [
+    [
+     "Q_exactly_100_chars_is_accepted"
+    ],
+    23
+   ],
+   "p": [
+    [
+     "Q_of_exactly_100_characters_is_accepted"
+    ],
+    25
+   ]
+  },
+  "q of 101 accepted": {
+   "a": [
+    [
+     "Search_q_longer_than_100_characters_returns_400"
+    ],
+    18
+   ],
+   "b": [
+    [
+     "Q_longer_than_100_chars_returns_400"
+    ],
+    23
+   ],
+   "p": [
+    [
+     "Q_longer_than_100_characters_returns_400"
+    ],
+    25
+   ]
+  },
+  "search title only": {
+   "a": [
+    [
+     "Search_matches_note_case_insensitively"
+    ],
+    18
+   ],
+   "b": [
+    [
+     "Search_matches_note_field"
+    ],
+    23
+   ],
+   "p": [
+    [
+     "Search_matches_note_field"
+    ],
+    25
+   ]
+  },
+  "done counted under none": {
+   "a": [
+    [
+     "Search_narrows_open_done_overdue_due_soon_and_by_priority"
+    ],
+    18
+   ],
+   "b": [
+    [],
+    23
+   ],
+   "p": [
+    [],
+    25
+   ]
+  }
+ },
+ "hit": {
+  "dueSoon ends today+6": {
+   "a": true,
+   "b": true,
+   "p": true
+  },
+  "overdue includes today": {
+   "a": true,
+   "b": true,
+   "p": true
+  },
+  "dueSoon includes overdue": {
+   "a": true,
+   "b": true,
+   "p": true
+  },
+  "done counted at priority 2": {
+   "a": false,
+   "b": false,
+   "p": false
+  },
+  "open counts done": {
+   "a": true,
+   "b": true,
+   "p": true
+  },
+  "q of 100 refused": {
+   "a": true,
+   "b": true,
+   "p": true
+  },
+  "q of 101 accepted": {
+   "a": true,
+   "b": true,
+   "p": true
+  },
+  "search title only": {
+   "a": true,
+   "b": true,
+   "p": true
+  },
+  "done counted under none": {
+   "a": true,
+   "b": false,
+   "p": false
+  }
+ },
+ "caught": {
+  "a": 8,
+  "b": 7,
+  "p": 7
+ },
+ "pairs": {
+  "a+b": 8,
+  "a+p": 8,
+  "b+p": 7
+ },
+ "n": 9
+}
