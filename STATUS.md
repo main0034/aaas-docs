@@ -138,9 +138,7 @@ trusting the wrong layer.
   only; refused on `aaas-agent` and `aaas-docs`)
 - `aaas-app-demo` and `aaas-app-template` CI now include `change records are complete and written by the harness`
   in the `test` job; the ruleset is unchanged (`test` + `build`)
-- Merged branches safe to delete: `recover/demo-appdb-import`, `chore/remove-appdb-import`,
-  `recover/demo-appdb-import-2`, `chore/remove-appdb-import-2`, `deploy/demo-63ec008`, `deploy/demo-55b18eb`, `deploy/rooms` on `aaas-deployments`; `ci/no-fake-db` and `test/endpoint-tests` on the app and template; the agent's
-  `feat/*` branches on `aaas-app-demo` (not `feat/notebook` — PR #6, never merge)
+- **No merged branches left** (checked 10 October). Branches on GitHub are the open PRs' only; `feat/notebook` is PR #6, never merge
 
 ## Things to remember
 
