@@ -1,6 +1,6 @@
 # Next session
 
-Written 4 October 2026 at the end of roadmap step 2a. Replaced wholesale at the end of every session —
+Written 10 October 2026 at the end of roadmap step 2b. Replaced wholesale at the end of every session —
 this file is intent, not history. What actually happened lives in `FINDINGS.md`, where things stand
 lives in `STATUS.md`, and the ordered plan is `AaaS-context.md` §9.
 
@@ -8,101 +8,89 @@ lives in `STATUS.md`, and the ordered plan is `AaaS-context.md` §9.
 
 ## Topic
 
-**Roadmap step 2b: the spec-tester's tests as a required check the builder cannot read.** One change
-runs end to end: brief → spec-tester writes tests → tests stored where the builder cannot read them →
-builder opens a PR → CI runs the hidden tests as a required `acceptance` check → red goes to a fix
-round, green is merge-ready. Then decide whether one class of change auto-merges.
+**Roadmap step 2c: two spec-testers per change, their tests combined, then auto-merge for route-only
+changes.** `create-change` runs two independent spec-tester sessions on the same brief and commits both
+files into `changes/<id>/`. Measure the combined gate on planted bugs against single runs. If it holds,
+turn on auto-merge for one class of change, with the harness doing the merge.
 
 One topic. If something else turns out to block it, say which and why before widening.
 
 ## Why this one
 
-Finding 26: the builder's green was wrong on the largest brief. Finding 27: a spec-tester session that
-never sees the code caught that defect and 15/17 planted bugs, with no false reds, for $0.42-0.77. The
-tests work. What is missing is the plumbing that makes them a gate instead of something the operator
-runs by hand. Without it, OQ-5 (auto-merge) cannot move.
+Step 2b built the gate and ended without an auto-merge, for a recorded reason (finding 28). One spec-tester
+run went green on #16's known defect that two earlier runs caught. Across seven runs, the misses differ
+between runs of the same brief: trimming in one, done items in another. So the union of two independent
+runs is the cheapest lever left, at about $0.7 a run, and it is the last thing between OQ-5 and a first
+merge without a human. Step 3 (a new app from nothing) is the alternative if you would rather move on.
 
 ## Read first, in this order
 
 | File | Why |
 |---|---|
-| `FINDINGS.md` findings 26-27 | The numbers, the shared blind spot, the caveats |
-| `aaas-agent/README.md` + `harness/main.py` (`write-acceptance`, `fix_forward`) | Where the two runs and the fix loop are wired |
-| `aaas-app-demo/.github/workflows/ci.yml` + `release.yml` | The `test` job the new job sits beside; how `release.yml` already mints an `aaas-bot` App token |
-| `aaas-agent/acceptance/` | `AcceptanceBase.cs`, the operator's tests, the spec-tester's, and the scorer |
-
-## Before the session - Martin
-
-1. **Create a private repo `aaas-acceptance`** and install the `aaas-bot` App on it with Contents: read.
-   This can't be done from my side: the operator token cannot create repos or install Apps.
-2. Be ready to **push a `ci.yml` change to `aaas-app-demo`** yourself. Nothing I or the agent hold has
-   the Workflows permission, on purpose (finding 19).
+| `FINDINGS.md` findings 27-28 | The seven spec-tester runs, what each missed, the two harness bugs |
+| `aaas-agent/harness/main.py` `run_change`, `harness/change.py` | Where a second spec-tester slots in |
+| `aaas-app-demo/scripts/check-changes.sh`, AGENT.md "The change record" | What CI enforces |
+| `aaas-agent/acceptance/score/` (untracked) | The scorer and planted bugs, to extend |
 
 ## State to verify before starting
 
-- `aaas-agent` `master` has #3 (`write-acceptance`); `aaas-deployments` `master` has `a25e396` (runbook + the set-member rule).
-- `aaas-acceptance` exists, is private, and the `aaas-bot` App can read it (mint a token in a dry run).
-- `aaas-app-demo` PRs #14-16 are still open (unless Martin decided otherwise). `rg-demo-dev` does not exist.
-- No `index.lock` / `HEAD.lock` / `tmp_obj_*` in any repo's `.git`. `gh` works in the linked shell.
+- `aaas-agent` `master` is `6b1ce8b` or later (#5). `aaas-app-demo` `master` is `97b30b4` (#17) and has
+  `changes/2026-10-01-item-priority/`; `aaas-app-template` `master` is `4e6d02b` (#4).
+- `aaas-app-demo` #18 and #19 are open and green; `aaas-deployments` #26 is still unmerged. `rg-demo-dev` does not exist.
+- No `index.lock` / `HEAD.lock` / `tmp_obj_*` in any repo's `.git`. Martin's `aaas-agent` is fast-forwarded
+  (the image is built from the local tree).
 
 ## The work
 
-1. **Change id.** The harness gives each change an id (the run id of the spec-tester run). It commits that
-   run's test file to `aaas-acceptance/<app-repo>/<id>/` with the operator token. The builder run is told
-   the id and puts `Acceptance: <id>` in the PR body. The harness passes it; the agent does not choose it.
-2. **`acceptance` job in `ci.yml`** (Martin pushes it): mints an App token, checks out
-   `aaas-acceptance/<repo>/<id>` (the id is read from the PR body), copies it with `AcceptanceBase.cs`
-   into `tests/App.Tests/Acceptance/`, and runs `--filter-namespace Acceptance` against the job's
-   Postgres. A missing id or missing directory is **red**, not skipped. The job is added to the ruleset's
-   required checks.
-3. **`--task create-change`** in the harness: spec-tester run, then builder run, then fix-forward. A red
-   `acceptance` check feeds its trimmed log to the fix round like any other check.
-4. **Run it once on a new brief**, written for this session and not seen by either role before. Then
-   **re-run `projects`** to see #16's miss go red in CI and get fixed by a fix round.
-5. **One finding**, and a one-line OQ-5 position: which class of change, if any, merges without a human.
+1. **`--spec-testers 2`**: two spec-tester sessions, sequential, each in its own isolated checkout, each with its
+   own namespace (`...ItemSummaryA`, `...B`). Both files and both `NOTES.md` go into `changes/<id>/`. The builder
+   still sees neither.
+2. **Measure on what we have.** Run two fresh spec-testers on each of `item-summary`, `projects`, `item-tags` and
+   `item-upcoming` without a builder (`write-acceptance`, twice). Score each run alone and each pair combined on the
+   planted bugs (`score.py`, extended with finding 28's 9 for `item-summary`) and on #16's head. That gives 8 new
+   runs and 4 pairs: is the union's miss rate materially below a single run's?
+3. **If it holds: auto-merge.** The harness merges a green PR when all of these hold:
+   - the PR adds no migration (the diff has nothing under `src/App/Migrations/`)
+   - the PR touches nothing outside `src/`, `tests/` and its own `changes/<id>/`
+   - the acceptance files are byte-identical to the harness's commit
+   - every earlier change's tests pass, which CI already enforces
+
+   The merge is deterministic code in the harness (D-17), never a model's decision. Prove it once with a new brief.
+4. One finding, and the OQ-5 position updated.
 
 ## Decisions I will need from you
 
-- **Where the tests live.** Expect me to argue: a private `aaas-acceptance` repo read by the `aaas-bot` App
-  token that `release.yml` already uses. That adds no new secret (D-14 holds). The alternatives were
-  rejected: an encrypted file in the app repo still means a key to manage, and running the tests in the
-  harness would mean the gate isn't a check.
-- **What the fix round sees.** Expect me to argue: the failing test's name and assertion message, as with
-  any red check. The tests come from the spec, so fixing the code to pass them is fixing it to meet the
-  spec. The fix round must not edit the hidden tests, and it can't: they are not in the repo.
-- **Threat model, stated once.** The builder's code runs in the same CI job as the hidden tests, so a
-  hostile builder could print them. Expect me to argue: accept it. The point is independence, not
-  secrecy from an adversary, and the builder has no reason to look. Record it as a limit of the design.
-- **Which change, if any, auto-merges.** Expect me to argue: none this session. Turn it on after step 4
-  if the `acceptance` check behaves, and only for changes that add routes without a migration. Changes
-  with a migration stay gated (OQ-5, OQ-7).
+- **Who merges.** I expect to argue for the harness, with the operator token, after the checks above. That needs no
+  new credential (D-14), and the ruleset still requires `test` + `build`. The alternative, GitHub's auto-merge
+  setting, would let any green PR merge, including one from a human that skipped the change record.
+- **The class.** I expect to argue for route-only changes with no migration and no new package. A migration stays
+  gated (OQ-7); so does a new dependency, because nothing yet reviews one.
+- **What counts as holding.** I expect to argue: the union catches every real defect so far and at least 90% of
+  planted bugs, with 0 false reds. If it does not, record it and move to step 3 rather than add a third run.
 
 ## Done when
 
-- One change runs brief → spec-tester → hidden tests in `aaas-acceptance` → builder PR → required
-  `acceptance` check → green, without the operator touching the tests.
-- `projects` re-run: the hidden check goes red on the trimmed-name rule (or the builder gets it right)
-  and the outcome is recorded.
-- A finding, and a one-line OQ-5 position in `AaaS-context.md`.
+- Two spec-testers per change in `create-change`, and a measured single-versus-pair miss rate.
+- Either one change merged by the harness without a human, or a recorded reason why not, with step 3 next.
 
 ## Explicitly not this session
 
-- Auto-merge on a migration-bearing change. Deployment (`apply`). A new app from nothing (OQ-15).
+- Deployment (`apply`), and merging #26. A new app from nothing (OQ-15). Superseding accepted behaviour (OQ-24).
 - OQ-21, the `workload_profile_name` diff, anything commercial (D-19).
 
 ## Carried over
 
-- **Spec-tester blind spot:** both `projects` runs missed "delete only when no items" with done items.
-  The rule is now in the runbook (`a25e396`) and not yet re-measured.
-- **Untracked in `aaas-agent`:** `acceptance/` (operator tests, `spec-tester/`, `score/`), briefs
-  `item-upcoming.md`, `item-tags.md`, `projects.md`, `item-due.md`, `item-priority.md`,
-  `notebook-fix-cli-missing.md`, and the `.gitignore` line.
-- **Run drivers:** `phase7.command` is current. `session-1001.command`, `phase6.command`, `notebook-*.command`
-  and their log folders can go.
-- **Policy false positives:** pipes after `dotnet` (finding 26), the `nuget` path, heredoc `fix:`. The
-  spec-tester had none in five runs.
-- **The permanent `workload_profile_name` diff**; **the operator token is admin**; **OQ-21**; **`gh pr close`
-  refused by policy**; **no `.terraform.lock.hcl`**; **no ruleset on `aaas-deployments`**; **a capped run
-  loses its work** (finding 22).
-- **Merged branches to delete:** `test/endpoint-tests` (template, demo), `feat/priority-list` (demo),
-  `feat/write-acceptance` (agent).
+- **Open PRs to decide:** `aaas-app-demo` #18 (`/items/summary`) and #19 (projects, supersedes #16), both green with
+  change records; #14, #15 and #16 predate the change record; `aaas-deployments` #26 (deploy of #17, no runtime
+  change). Merging any app PR opens a deployment PR whose apply is a create.
+- **Briefs in `aaas-agent/briefs/` are an inbox now.** The app repo holds the record. `item-due` (#11) has no record:
+  backfill it if someone writes its acceptance tests. The notebook briefs belong to the notebook app.
+- **Untracked in `aaas-agent`:** `acceptance/` (operator tests, `spec-tester/`, `score/`), the briefs, and the
+  `.gitignore` line. Commit the scorer if step 2c extends it.
+- **Run drivers:** `session-1010.command` is current. `phase7.command`, `phase6.command`, `session-1001.command`,
+  `notebook-*.command` and their log folders can go.
+- **Policy false positives:** pipes after `dotnet` (finding 26), the `nuget` path, heredoc `fix:`, a `grep` pattern with
+  `\|` (finding 28).
+- **The permanent `workload_profile_name` diff**; **the operator token is admin**; **OQ-21**; **`gh pr close` refused by
+  policy**; **no `.terraform.lock.hcl`**; **no ruleset on `aaas-deployments`**; **a capped run loses its work** (finding 22).
+- **Merged branches to delete:** `test/endpoint-tests` (template, demo), `feat/priority-list` (demo).

@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 4 October 2026, afternoon, at the end of roadmap step 2a. Morning, Phase 7: green was right on 2 of 3 briefs, measured by hidden acceptance tests. Afternoon: a spec-tester session that never sees the code wrote acceptance tests as good as the operator's (finding 27). The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
+Written 10 October 2026, at the end of roadmap step 2b. Every change now has a record in its app repo, `changes/<id>/`: the request and acceptance tests written from it by a spec-tester the builder never sees, enforced by CI. Two changes went through it green on first push; one spec-tester run in three missed a boundary defect (finding 28). The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -45,6 +45,8 @@ Written 4 October 2026, afternoon, at the end of roadmap step 2a. Morning, Phase
 
 - **Spec-tester role** (4 October, finding 27): `--task write-acceptance` (`aaas-agent` #3, runbook `aaas-deployments/agent/write-acceptance.md`). Isolated by construction: `master` only, no remote, no token, no `gh`, writes only into `tests/App.Tests/Acceptance/`. Five runs: 0 false reds on PRs #13-16, both real defects caught, 15/17 planted bugs, $0.42-0.77 a run
 
+- **The change record** (10 October, finding 28, D-25): `--task create-change` (`aaas-agent` #4, #5) runs brief → spec-tester → builder → hidden tests → fix rounds on one record, `changes/<date>-<name>/` in the app repo. CI runs the tests in the existing endpoint step (the test project compiles `changes/**/*.cs`), and `scripts/check-changes.sh` keeps the record harness-written and immutable once merged (`aaas-app-demo` #17, template #4). Runs: `item-summary` #18 (25 spec tests, $2.34, 17m) and `projects` #19 (26 spec tests, $2.10, 14m 34s), both **green on first push**; #19 also passes the operator's 15 hidden tests. Spec tests caught 7/9 and 3/3 planted bugs but went **green on #16's known defect**
+
 Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, `AddItemDueDate` on the fresh create. On 29 September: `GET /items/overdue` and `/ready` → `migration: 20260929180049_AddItemDueDate`. On 28 September: `GET /items?q=milk&open=true` against the deployed app. Before that, on 26 September: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260926142702_MarkItemDone"}`
 
 
@@ -54,9 +56,12 @@ Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, 
 
 ## Next step
 
-Per `NEXT-SESSION.md`, roadmap step 2b: **the spec-tester's tests as a required check the builder cannot
-read**, then a first auto-merge for one defined class of change. This needs a private store for the tests
-and a workflow change Martin pushes. Competing:
+Per `NEXT-SESSION.md`, roadmap step 2c: **two spec-testers per change, their tests combined**, measured on
+planted bugs, then auto-merge for route-only changes without a migration if the combined gate holds. Step 2b
+ended without an auto-merge, for a recorded reason: one spec-tester run is not a gate to merge on unseen
+(finding 28). Competing:
+
+- **Roadmap step 3, a new app from nothing (OQ-15).** The alternative if 2c is judged not worth a session.
 
 - **OQ-21 — "immutable once applied", not "once merged".** Unchanged; roadmap step 4.
 - **The permanent `workload_profile_name` diff** on the Container App (finding 24). Harmless so far.
@@ -77,12 +82,14 @@ export GH_TOKEN=...                  # fine-grained PAT: deployments + the app r
          --request @briefs/item-done.md --non-interactive          # create-app
 ./run.sh --task create-app --app-repo aaas-app-demo \
          --request @briefs/item-search.md --fix-rounds 2           # with fix-forward
+./run.sh --task create-change --app-repo aaas-app-demo \
+         --request @briefs/item-summary.md --fix-rounds 2          # the change record (finding 28)
 ```
 
 From a linked cloud session, Claude cannot type into Terminal (click-only) and the linked
 shell has no Docker: the run goes in a script Martin starts once, logged through `script(1)`
-(finding 21). `phase7.command` in the `aaas` folder is the current one: a watcher only. Started once, it
-runs the harness whenever `phase7-logs/RERUN` appears (one line of `run.sh` arguments) and stops on `phase7-logs/STOP`. A RERUN written before the double-click runs at once.
+(finding 21). `session-1010.command` in the `aaas` folder is the current one: a watcher only. Started once, it
+runs the harness whenever `session-1010-logs/RERUN` appears (one line of `run.sh` arguments) and stops on `session-1010-logs/STOP`. A RERUN written before the double-click runs at once.
 
 `runs/<id>/report.md` carries the wall clock, the tool histogram, the cost
 breakdown and every policy refusal. Read the refusals: a refusal that recurs is
@@ -106,15 +113,20 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: DESTROYED** since 1 October (`destroy` run 36908084546, green). Phase 7 did not need it,
-  and no apply ran on 4 October. Nothing is billing.
+- **Infrastructure: DESTROYED** since 1 October (`destroy` run 36908084546, green). No apply ran on 4 or 10
+  October. Nothing is billing.
 - `deployments/dev/demo/` pins `app-stack` **v0.3.2** and image `0ac9d66` (`aaas-app-demo/master`: PR #13, the priority
   list), schema `AddItemDueDate`. **`0ac9d66` has never been applied**: its apply failed on the state lock and was not
   re-run before the destroy. The next `apply` (a create) is its first deployment
 - `aaas-deployments` `master` has `-lock-timeout=10m` on plan and apply (`5378c12`, finding 25)
-- **`aaas-app-demo` has three open, unmerged agent PRs:** #14 (`/items/upcoming`), #15 (tags, with a migration),
-  #16 (projects, with a migration; hidden-test failure in a comment). Independent of each other, all off `0ac9d66`.
-  Merging any of them opens a deployment PR, and its apply on a destroyed stack is a create (~22 minutes)
+- **`aaas-app-demo` `master` is `97b30b4`** (#17, the change record): it carries `changes/2026-10-01-item-priority/`
+  and its 9 acceptance tests. No runtime change since `0ac9d66`.
+- **`aaas-deployments` #26 is open** (`deploy/demo-97b30b4`), opened by `release.yml` for #17. Do not merge it on a
+  destroyed stack: it is a create (~22 minutes) for an image with no runtime change. Close it or leave it.
+- **`aaas-app-demo` open agent PRs:** #18 (`/items/summary`, change record, green) and #19 (projects, change record,
+  green, operator tests pass) from 10 October; #14 (`/items/upcoming`), #15 (tags), #16 (projects, green-but-wrong)
+  from 4 October, which predate the change record. **#19 supersedes #16.** Merging any of them opens a deployment PR,
+  and its apply on a destroyed stack is a create
 - All six repos are public (needed for branch protection on the free plan)
 - `aaas-app-demo` `master` has a ruleset: PR required, squash only, `test` + `build` required and
   strict, no force-push or deletion (created 26 September)
@@ -124,11 +136,21 @@ trusting the wrong layer.
 - Three tokens in the `aaas` folder: `.claude-oauth-token-dont-delete` (the harness's Claude login), `.github_PAT_dont_delete` (operator, all repos, no Workflows, no
   Actions write) and `.aaas-agent-PAT-dont-delete` (agent: `aaas-deployments` + `aaas-app-demo`
   only; refused on `aaas-agent` and `aaas-docs`)
+- `aaas-app-demo` and `aaas-app-template` CI now include `change records are complete and written by the harness`
+  in the `test` job; the ruleset is unchanged (`test` + `build`)
 - Merged branches safe to delete: `recover/demo-appdb-import`, `chore/remove-appdb-import`,
   `recover/demo-appdb-import-2`, `chore/remove-appdb-import-2`, `deploy/demo-63ec008`, `deploy/demo-55b18eb`, `deploy/rooms` on `aaas-deployments`; `ci/no-fake-db` and `test/endpoint-tests` on the app and template; the agent's
   `feat/*` branches on `aaas-app-demo` (not `feat/notebook` — PR #6, never merge)
 
 ## Things to remember
+
+- **A change goes through `--task create-change`**, not `create-app`, from now on. `briefs/` in `aaas-agent` is an
+  inbox: the harness copies the brief into the app repo's `changes/<id>/brief.md`, which is the record.
+- **Never edit `changes/` by hand on a branch**: CI refuses commits without the `AaaS-Change` trailer, and a merged
+  record is immutable. Superseding an old acceptance test is OQ-24, and today an admin merge.
+- **GitHub lags a push by seconds.** Anything that pushes and then reads the PR head must wait for the sha it pushed
+  (`checks.wait_for_head`, finding 28).
+- **`/tmp` is writable for every role** in the harness. Nothing that must stay confined goes under it.
 
 - **Never move a git tag.** Cut a new one. Terraform resolves refs at init and gives no hint a tag moved.
 - **Push guardrail changes straight to master.** The `guardrails` job fails any PR touching `.github/`, `schemas/`, `scripts/`, `agent/` — including the PR that installs it.
