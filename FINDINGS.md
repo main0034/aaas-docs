@@ -1142,6 +1142,73 @@ and those tests keep running as regression tests. #13's brief and its 9 spec tes
 - **An agent facing an unexplained red reaches for the guardrail.** The phantom fix round's first act was
   to write the missing tests. The deterministic refusal held. Asking it not to would not have been enough.
 
+## 29. Two spec-testers, then the first merge without a human; conventions and requests
+
+10 October 2026, evening. Roadmap step 2c, plus two requests from Martin taken into the session.
+
+**Two spec-testers instead of one.** Fresh `write-acceptance` runs, each against `master` as it was before
+the change (`--at`, because #18 and #19 had merged). Scored by the operator on planted bugs and on the two
+real defects (`score2.py`, `evidence/acceptance/`):
+
+| Brief | Run A | Run B | A and B | Real defect | Planted bugs missed |
+|---|---|---|---|---|---|
+| `item-summary` | 8/9 | 7/9 | 8/9 | - | done counted at priority 2 (A and B); done counted under "none" (B) |
+| `projects` | 4/4 | 3/4 | 4/4 | #16 trimmed name: A and B caught it | delete allowed with only done items (B) |
+| `item-tags` | 5/5 | 5/5 | 5/5 | #15 `/tags` 500: both caught it | - |
+| `item-upcoming` | 4/4 | (capped) | 4/4 with 4 Oct's run | - | - |
+
+Single runs: 36 of 40 (90%). Pairs: 21 of 22 (95%). Both real defects caught by every pair, 0 false reds.
+Seven runs cost $5.54, $0.58-1.13 each. The eighth hit the subscription's 5-hour limit after $0.26 and kept
+nothing (finding 22's "a capped run loses its work", again).
+
+- **A pair fixes misses that vary between runs.** B missed "only done items" and "done under none"; A
+  caught both. The afternoon run in `create-change` missed #16's defect; A and B both caught it.
+- **A pair does not fix a blind spot every run shares.** All three `item-summary` runs tested "done items
+  are left out of byPriority" at priority 1 only. A done item at priority 2 passes. This is the
+  set-membership rule again ("every member", this time every priority level), already in the runbook and
+  still missed. A third run would not help; a sharper runbook example might.
+
+**The first merge without a human.** `--task create-change --change item-calendar --spec-testers 2
+--auto-merge` (`aaas-app-demo` #22). The request was the first one written from `requests/TEMPLATE.md`:
+- spec-tester A: 20 tests, 6m 19s, $0.81
+- spec-tester B: 18 tests, 3m 56s, $0.59
+- builder: 4m 15s, $0.82, **green on first push** (CI 90s)
+- `merge_blockers` found none: no migration, no dependency change, only `src/`, `tests/` and the change's
+  own record
+- the harness squash-merged at 16m 14s, **$2.22 in all**
+
+The record on `master` has the request (moved from `requests/`, shown by git as a rename), both test files
+with their NOTES, and the code.
+
+**What the merge rests on.**
+1. Two independent spec-testers' tests pass. Neither run saw the code or the other's tests.
+2. The builder could not edit those tests: refused by the policy, by CI, and by a byte check before merge.
+3. The ruleset's `test` and `build` checks passed.
+4. The change is in the class D-26 allows.
+
+**What it does not rest on.**
+- Anyone reading the code.
+- The shared blind spot: a rule every spec-tester run tests at only one point gets through. The remaining
+  risk is the runbook's, not a missing role.
+
+**Audit gap.** GitHub records the merge as `main0034`, the owner of the agent token, the same as a human
+merge. The harness should say on the PR that it merged and why. Carried over.
+
+**The two requests.**
+- **Lower-level coding instructions** live in the app's AGENT.md, "Conventions", and each one has a CI
+  check (D-17). First two:
+  - CSharpier 1.3.0 replaces `dotnet format`.
+  - `scripts/check-test-layout.py` requires `// Arrange`, `// Act`, `// Assert` on every test a PR adds
+    or changes.
+
+  All 52 existing tests were converted. The harness formats spec-tester files and checks their layout
+  before the builder starts, because nobody can fix a file in the change record afterwards. Both spec-testers
+  in #22 ran the formatter and the layout check, as the runbook now says.
+- **Requests live in the app repo.** The requester commits `requests/<name>.md` from `requests/TEMPLATE.md`
+  (what and why, rules, the fixed interface, examples, what is out, open questions). `--change <name>` moves
+  it into the record. `aaas-agent` now holds nothing about one application: its briefs, hidden tests and
+  scorer moved to `aaas-docs/evidence/`.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
@@ -1150,6 +1217,6 @@ and those tests keep running as regression tests. #13's brief and its 9 spec tes
 - Whether teardown is clean — partly (finding 20): the child-resource hang is fixed, and since 29 September (finding 24) `destroy` fails unless Azure confirms the resource group is gone. A destroy still takes ~25 minutes.
 - ~~Whether a create from nothing succeeds without help~~ — answered in finding 25: yes, on `app-stack` v0.3.2, 14 added with no import. 22 minutes, 18 of them the Container App Environment.
 - ~~Whether a failed migration is caught at deploy time~~ — answered in finding 16: it was not, at `min_replicas = 0`. Since finding 19 it is, by the readiness gate.
-- **Whether green is correct** - partly (finding 26): 2 of 3 briefs, the largest went green with a stated boundary untested. Three runs; a direction, not a rate. Finding 27: a spec-tester that never sees the code caught that defect and 15 of 17 planted bugs, with no false reds. Finding 28: that check is now a CI gate in the app repo (the change record), and two changes passed it on first push - but one spec-tester run in three missed the boundary defect the other two caught. 25 of 29 planted bugs over seven runs.
+- **Whether green is correct** - partly (finding 26): 2 of 3 briefs, the largest went green with a stated boundary untested. Three runs; a direction, not a rate. Finding 27: a spec-tester that never sees the code caught that defect and 15 of 17 planted bugs, with no false reds. Finding 28: that check is now a CI gate in the app repo (the change record), and two changes passed it on first push - but one spec-tester run in three missed the boundary defect the other two caught. 25 of 29 planted bugs over seven runs. Finding 29: two spec-testers together catch 95% of planted bugs and every real defect so far, and the harness merged its first change unaided. A blind spot both runs share still gets through.
 - **The escape hatch:** touched, not answered (finding 14). We now know the agent refuses gracefully and explains itself when a request exceeds the module. We still do not know what the *product* does at that moment, which remains the hardest question in the idea.
 - **What agent cost looks like at scale** (finding 14, OQ-18). One run is $0.65 of shadow API cost, dominated by context rather than output, and a follow-up question costs about as much as the original work. Untested: whether trimming the carried context after the tfvars is written materially changes that.

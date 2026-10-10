@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 10 October 2026, at the end of roadmap step 2b. Every change now has a record in its app repo, `changes/<id>/`: the request and acceptance tests written from it by a spec-tester the builder never sees, enforced by CI. Two changes went through it green on first push; one spec-tester run in three missed a boundary defect (finding 28). The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
+Written 10 October 2026, evening, at the end of roadmap step 2c. A change starts as `requests/<name>.md` in the app repo; two spec-testers write hidden acceptance tests, a builder writes the code, and for a change with no migration or dependency the harness merges it without a human - done once, #22 (finding 29). Coding conventions (CSharpier, Arrange/Act/Assert) are in each app's AGENT.md with CI checks. The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -50,24 +50,24 @@ Written 10 October 2026, at the end of roadmap step 2b. Every change now has a r
 Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, `AddItemDueDate` on the fresh create. On 29 September: `GET /items/overdue` and `/ready` → `migration: 20260929180049_AddItemDueDate`. On 28 September: `GET /items?q=milk&open=true` against the deployed app. Before that, on 26 September: `GET /ready` → `{"database":"ok","auth":"managed-identity","migration":"20260926142702_MarkItemDone"}`
 
 
+- **Two spec-testers and the first harness merge** (10 October, evening, finding 29, D-26): `--spec-testers 2`, `--auto-merge` (`aaas-agent` #6). Pair 95% of planted bugs vs 90% single, both real defects, 0 false reds. `item-calendar` #22: two spec-testers + builder green on first push, **merged by the harness**, 16m 14s, $2.22
+- **Conventions and requests** (10 October, evening, D-27): AGENT.md "Conventions" with CI checks - CSharpier 1.3.0 and `scripts/check-test-layout.py` (app-demo #20, template #5). `requests/TEMPLATE.md` and `--change <name>` (app-demo #21, template #6, `aaas-agent` #7). `aaas-agent` holds nothing app-specific; the old briefs, hidden tests and scorer are in `aaas-docs/evidence/`
+
 ## Not started
 
 - **A new app from nothing** — new repo + first deployment + first app PR. Blocked on repo provisioning (OQ-15), deliberately out of scope so far
 
 ## Next step
 
-Per `NEXT-SESSION.md`, roadmap step 2c: **two spec-testers per change, their tests combined**, measured on
-planted bugs, then auto-merge for route-only changes without a migration if the combined gate holds. Step 2b
-ended without an auto-merge, for a recorded reason: one spec-tester run is not a gate to merge on unseen
-(finding 28). Competing:
+Per `NEXT-SESSION.md`, roadmap step 3: **a new app from nothing** (OQ-15) - one command takes a name to a running
+empty app with its identity verified before the first deploy. Competing:
 
-- **Roadmap step 3, a new app from nothing (OQ-15).** The alternative if 2c is judged not worth a session.
-
+- **The shared spec-tester blind spot** (finding 29): a rule tested at one point only. A runbook example, not a role.
 - **OQ-21 — "immutable once applied", not "once merged".** Unchanged; roadmap step 4.
 - **The permanent `workload_profile_name` diff** on the Container App (finding 24). Harmless so far.
 
 ```bash
-./run.sh --task write-acceptance --app-repo aaas-app-demo --request @briefs/projects.md --non-interactive
+./run.sh --task write-acceptance --app-repo aaas-app-demo --at 97b30b4 --request @briefs/projects.md --non-interactive
 ```
 writes `runs/<id>/acceptance/<Name>Acceptance.cs` and `NOTES.md`. No PR, no token use beyond the clone.
 
@@ -82,8 +82,8 @@ export GH_TOKEN=...                  # fine-grained PAT: deployments + the app r
          --request @briefs/item-done.md --non-interactive          # create-app
 ./run.sh --task create-app --app-repo aaas-app-demo \
          --request @briefs/item-search.md --fix-rounds 2           # with fix-forward
-./run.sh --task create-change --app-repo aaas-app-demo \
-         --request @briefs/item-summary.md --fix-rounds 2          # the change record (finding 28)
+./run.sh --task create-change --app-repo aaas-app-demo --change item-calendar \
+         --spec-testers 2 --fix-rounds 2 --auto-merge               # requests/<name>.md, finding 29
 ```
 
 From a linked cloud session, Claude cannot type into Terminal (click-only) and the linked
@@ -119,14 +119,12 @@ trusting the wrong layer.
   list), schema `AddItemDueDate`. **`0ac9d66` has never been applied**: its apply failed on the state lock and was not
   re-run before the destroy. The next `apply` (a create) is its first deployment
 - `aaas-deployments` `master` has `-lock-timeout=10m` on plan and apply (`5378c12`, finding 25)
-- **`aaas-app-demo` `master` is `97b30b4`** (#17, the change record): it carries `changes/2026-10-01-item-priority/`
-  and its 9 acceptance tests. No runtime change since `0ac9d66`.
-- **`aaas-deployments` #26 is open** (`deploy/demo-97b30b4`), opened by `release.yml` for #17. Do not merge it on a
-  destroyed stack: it is a create (~22 minutes) for an image with no runtime change. Close it or leave it.
-- **`aaas-app-demo` open agent PRs:** #18 (`/items/summary`, change record, green) and #19 (projects, change record,
-  green, operator tests pass) from 10 October; #14 (`/items/upcoming`), #15 (tags), #16 (projects, green-but-wrong)
-  from 4 October, which predate the change record. **#19 supersedes #16.** Merging any of them opens a deployment PR,
-  and its apply on a destroyed stack is a create
+- **`aaas-app-demo` `master` is `bfadd80`** (#22, merged by the harness): `/items/summary`, projects, the calendar, the
+  change records, conventions and `requests/`. **Never deployed** - the stack is destroyed; the last image ever applied
+  is older than `0ac9d66`. Pending requests: `item-tags`, `item-upcoming`.
+- **`release.yml` opens a deployment PR for every app merge.** #29-#31 (for #20, #21, #22) were closed unmerged on
+  10 October: on a destroyed stack each is a create. The next deploy is a deliberate one from current `master`.
+- **`aaas-app-demo` open PRs from 4 October:** #14, #15, #16 predate the change record; #6 (`feat/notebook`) never merge.
 - All six repos are public (needed for branch protection on the free plan)
 - `aaas-app-demo` `master` has a ruleset: PR required, squash only, `test` + `build` required and
   strict, no force-push or deletion (created 26 September)
@@ -142,6 +140,12 @@ trusting the wrong layer.
 
 ## Things to remember
 
+- **A harness merge looks like yours on GitHub** (`main0034`, the agent token's owner). Until the harness comments
+  on the PR, tell them apart by the run record: `runs/<id>/report.md` ends "auto-merged by the harness".
+- **The plan's 5-hour limit ends runs mid-way and keeps nothing** (finding 22, again on 10 October). Queue long
+  measurements early in a window.
+- **Requests use `requests/TEMPLATE.md`**: Rules and Interface are what both agents are held to; Open questions are
+  left for a human.
 - **A change goes through `--task create-change`**, not `create-app`, from now on. `briefs/` in `aaas-agent` is an
   inbox: the harness copies the brief into the app repo's `changes/<id>/brief.md`, which is the record.
 - **Never edit `changes/` by hand on a branch**: CI refuses commits without the `AaaS-Change` trailer, and a merged

@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
-**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows · green measured against hidden tests: right 2 of 3 · a spec-tester that never sees the code caught the miss · every change carries its request and hidden acceptance tests in the app repo, enforced by CI  
-**Owner:** Martin Ingeson · **Last updated:** 2026-10-10 (v0.18)
+**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows · green measured against hidden tests: right 2 of 3 · a spec-tester that never sees the code caught the miss · every change carries its request and hidden acceptance tests in the app repo, enforced by CI · the harness merged its first change without a human  
+**Owner:** Martin Ingeson · **Last updated:** 2026-10-10 (v0.19)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -70,7 +70,14 @@ seeing them; the harness commits them after its push, and CI runs them as part o
 on every later change. Two changes went through it green on first push ($2.10-2.34, 15-17 minutes). But one
 spec-tester run in three passed #16's known defect, so a single run is not yet a gate to merge on unseen.
 
-**Not proven.** A new application from nothing (repo provisioning, OQ-15). A merge without a human (OQ-5).
+**Proven on 2026-10-10, evening (finding 29, D-26).** A merge without a human. Two independent spec-testers
+per change catch 95% of planted bugs and every real defect so far, against 90% for one. On that basis the harness
+merged `item-calendar` (#22): request in the repo → two spec-testers → builder → green on first push →
+merged, 16 minutes, $2.22, nobody reading the code. Only a class of change may do this: no migration, no
+dependency, nothing outside `src/`, `tests/` and its own record. What still gets through is a blind spot every
+spec-tester run shares.
+
+**Not proven.** A new application from nothing (repo provisioning, OQ-15).
 
 **This document drifted from the build.** The POC documents do not reference it, which is how
 five weeks of Azure-specific work happened while §9 still said "spike Scaleway first". §9 is now
@@ -411,6 +418,8 @@ loop. See OQ-4 and OQ-5 — this is the topic for the next session.
 | D-23 | **Fix-forward runs in the harness, not in the agent's turn: a fresh session per round, at most two rounds, and the harness never merges** | 2026-09-28 | Waiting for CI is not model work, so the harness polls for free and reads checks per commit. A fresh session gets the request, diff stat and trimmed log only — finding 14's "the cost is context". Proven in one round for $0.38, equal to the original push (finding 23). Merging stays with a human until OQ-5 is settled, because green is still not correct |
 | D-24 | **Routes are tested against a real Postgres, one cloned database per test; the agent writes these tests but does not run them** | 2026-10-01 | Three runs (findings 21, 23, 24) passed tests that could not see a wrong route; the template's "no database in tests" decided test strength, not the brief. Now `EndpointTest` + CI's `postgres:16`, `--fail-skips on` and `--minimum-expected-tests 1` (a skipped or empty suite is red). Per test, not per class: per class failed 10 of 11 natural tests on shared rows; a clone is ~0.1s. The harness gets no Postgres - CI runs them and fix-forward (D-23) handles red, ~$0.29 a round. Six planted route bugs all went red; the agent wrote such tests unprompted (finding 25) |
 | D-25 | **The change record lives in the app repo: `changes/<id>/` holds the request and its acceptance tests.** The harness writes it (brief before the builder starts, tests after its first push); CI compiles the tests into the endpoint suite and `scripts/check-changes.sh` keeps the record harness-only and immutable once merged | 2026-10-10 | Resolves OQ-23's "where". Replaces the planned private `aaas-acceptance` repo at Martin's request: the request and the behaviour it was accepted on travel with the code as its audit log, and accepted behaviour stays tested as regression. No new repo, token or CI job (D-14). Independence comes from order, not secrecy: the tests are off disk while the builder runs, and fix rounds may read but not edit them (refused by policy, by CI and by a byte check). Accepted limit: a hostile builder could rewrite history with a forged trailer. Cost: a later change cannot alter accepted behaviour without a human (OQ-24) |
+| D-26 | **The harness may merge a change without a human when two independent spec-testers' tests pass and the change adds no migration, no dependency and nothing outside `src/`, `tests/` and its own record** (`change.merge_blockers`, `--auto-merge`) | 2026-10-10 | Resolves OQ-5 for one class. A pair caught 95% of planted bugs and both real defects with 0 false reds, against 90% for one run; the builder cannot touch the tests (policy, CI, byte check). A migration stays gated (OQ-7), and so does a dependency, because nothing reviews one. The check is deterministic code (D-17), not a model's judgement. Accepted risk: a rule every spec-tester run tests at one point only (finding 29) |
+| D-27 | **Coding conventions live in the app's AGENT.md "Conventions", each with a CI check; requests live in the app's `requests/`, written from `requests/TEMPLATE.md`** | 2026-10-10 | Lower-level instructions belong with the app they govern, and a convention without a check is a request the agent can skip (D-17). First two: CSharpier, and Arrange/Act/Assert tests. Requests in the repo make `aaas-agent` application-free and give the requester one structure (rules, interface, examples) that both agents read |
 | D-19 | **This is a build-to-learn exercise, not a business in formation** | 2026-09-20 | Stated preference: play with the technology rather than settle the commercial model. The commercial and go-to-market open questions are parked rather than deleted, so the build proceeds without them blocking and the thinking is not lost. Revisit when there is something worth selling |
 
 ---
@@ -481,6 +490,9 @@ commercial and start being legal.
   now exists (D-25) and fix rounds cannot edit it. But one of three spec-tester runs on the same brief passed the
   defect the other two caught. Next: two independent spec-testers per change, tests combined; if the union holds,
   the harness merges route-only changes with no migration.
+  **2026-10-10, evening (finding 29, D-26) - resolved for one class.** Two spec-testers; the harness merged #22 with
+  no human. Everything with a migration or a dependency still waits for one. The open part is narrower: the shared
+  blind spot, and how a harness merge is told apart from a human one in the audit trail.
 - **OQ-24 — Superseding accepted behaviour.** Since D-25, every merged change's acceptance tests keep running and
   its record is immutable. A later request that deliberately changes that behaviour turns an old test red, and
   neither the builder nor CI may edit it. Today that is an admin merge by a human. Open: does the spec-tester of
@@ -592,7 +604,7 @@ of the product: the §2 user cannot review a PR.
 | 1 | ~~**Phase 7: is green correct?**~~ Done 2026-10-04 (finding 26): 2 of 3 correct; the largest green-but-wrong on an untested stated boundary | OQ-5 | ✓ |
 | 2a | ~~**A spec-tester role.**~~ Done 2026-10-04 (finding 27): no false reds, #16 caught, 15/17 planted bugs | OQ-23 | ✓ |
 | 2b | ~~**Act on it.**~~ Done 2026-10-10 (finding 28, D-25): the change record; hidden tests are part of the required check. No auto-merge: one spec-tester run in three missed a known defect | OQ-5, OQ-23 | ✓ (reason recorded) |
-| 2c | **Two spec-testers per change**, tests combined; measure the union's miss rate on planted bugs; if it holds, the harness merges route-only changes with no migration | OQ-5 | A merge without a human, or step 3 with the reason recorded |
+| 2c | ~~**Two spec-testers per change**~~ Done 2026-10-10 (finding 29, D-26): pair 95% vs single 90%; #22 merged by the harness | OQ-5 | ✓ |
 | 3 | **A new app from nothing** - repo, ruleset, identity, federated credentials, deployment directory, verified after creation | OQ-15 | One command or workflow takes a name to a running empty app, and asserts its identity before the first deploy |
 | 4 | **Version visibility** - module/archetype version tags on resources, and what each estate has applied | OQ-16, OQ-21 | "What is each app running" is answered from Azure metadata; the migration guard becomes "immutable once applied" |
 | 5 | **The first missing plane** - intake + conversation (OQ-4, OQ-22) or control plane (OQ-8). Chosen by interest when step 4 is done (D-19) | §5 | One end-to-end path through that plane, however thin |

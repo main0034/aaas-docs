@@ -1,96 +1,113 @@
 # Next session
 
-Written 10 October 2026 at the end of roadmap step 2b. Replaced wholesale at the end of every session —
-this file is intent, not history. What actually happened lives in `FINDINGS.md`, where things stand
-lives in `STATUS.md`, and the ordered plan is `AaaS-context.md` §9.
+Written 10 October 2026, evening, at the end of roadmap step 2c. Replaced wholesale at the end of every
+session — this file is intent, not history. What actually happened lives in `FINDINGS.md`, where things
+stand lives in `STATUS.md`, and the ordered plan is `AaaS-context.md` §9.
 
 ---
 
 ## Topic
 
-**Roadmap step 2c: two spec-testers per change, their tests combined, then auto-merge for route-only
-changes.** `create-change` runs two independent spec-tester sessions on the same brief and commits both
-files into `changes/<id>/`. Measure the combined gate on planted bugs against single runs. If it holds,
-turn on auto-merge for one class of change, with the harness doing the merge.
+**Roadmap step 3: a new app from nothing (OQ-15).** One command or workflow takes a name, `aaas-app-<name>`,
+to a repository that the change flow can work in and that deploys. It then *asserts* each piece of identity
+before the first deploy, rather than finding out eight minutes into one. Done with a real second app: a
+first request from its `requests/`, through `create-change`, deployed.
 
 One topic. If something else turns out to block it, say which and why before widening.
 
 ## Why this one
 
-Step 2b built the gate and ended without an auto-merge, for a recorded reason (finding 28). One spec-tester
-run went green on #16's known defect that two earlier runs caught. Across seven runs, the misses differ
-between runs of the same brief: trimming in one, done items in another. So the union of two independent
-runs is the cheapest lever left, at about $0.7 a run, and it is the last thing between OQ-5 and a first
-merge without a human. Step 3 (a new app from nothing) is the alternative if you would rather move on.
+The change loop is finished for an app that already exists. A request becomes merged code with no human for
+one class of change (finding 29, D-26). But every app so far was set up by hand. Each of these failed at
+least once and none failed legibly (OQ-15):
+- the repo from the template
+- the `aaas-bot` App installation
+- two repository secrets
+- the deployment directory
+- a federated credential per environment
+- the ruleset
+- the public GHCR package
+
+This list *is* the productisation surface, and §2's user cannot do any of it.
 
 ## Read first, in this order
 
 | File | Why |
 |---|---|
-| `FINDINGS.md` findings 27-28 | The seven spec-tester runs, what each missed, the two harness bugs |
-| `aaas-agent/harness/main.py` `run_change`, `harness/change.py` | Where a second spec-tester slots in |
-| `aaas-app-demo/scripts/check-changes.sh`, AGENT.md "The change record" | What CI enforces |
-| `aaas-agent/acceptance/score/` (untracked) | The scorer and planted bugs, to extend |
+| `AaaS-context.md` OQ-15, OQ-17, D-14, D-26 | What provisioning has to produce, and what it must not add |
+| `SETUP.md` | How the demo was bootstrapped by hand: the list to automate |
+| `aaas-deployments/agent/create-app.md` §0, `.github/workflows/` | What a new repo must have before the first agent run |
+| `aaas-app-template` | What a new repo starts from (conventions, `requests/`, `changes/`) |
+| `FINDINGS.md` 2-3, 19, 21 | The identity failures, and what they looked like |
 
 ## State to verify before starting
 
-- `aaas-agent` `master` is `6b1ce8b` or later (#5). `aaas-app-demo` `master` is `97b30b4` (#17) and has
-  `changes/2026-10-01-item-priority/`; `aaas-app-template` `master` is `4e6d02b` (#4).
-- `aaas-app-demo` #18 and #19 are open and green; `aaas-deployments` #26 is still unmerged. `rg-demo-dev` does not exist.
-- No `index.lock` / `HEAD.lock` / `tmp_obj_*` in any repo's `.git`. Martin's `aaas-agent` is fast-forwarded
-  (the image is built from the local tree).
+- `aaas-app-demo` `master` is `bfadd80` (#22, the harness merge); `aaas-agent` `master` is `0be7b1f` (#7) or later;
+  `aaas-app-template` `master` is `83c5321` (#6).
+- `rg-demo-dev` does not exist; no deployment PR on `aaas-deployments` is open (#29-#31 were closed unmerged).
+- No `index.lock` / `HEAD.lock` / `tmp_obj_*` in any repo's `.git`. Your local repos are pulled.
+- `az` works in your terminal (this session will need it: there is no Azure login anywhere else).
 
 ## The work
 
-1. **`--spec-testers 2`**: two spec-tester sessions, sequential, each in its own isolated checkout, each with its
-   own namespace (`...ItemSummaryA`, `...B`). Both files and both `NOTES.md` go into `changes/<id>/`. The builder
-   still sees neither.
-2. **Measure on what we have.** Run two fresh spec-testers on each of `item-summary`, `projects`, `item-tags` and
-   `item-upcoming` without a builder (`write-acceptance`, twice). Score each run alone and each pair combined on the
-   planted bugs (`score.py`, extended with finding 28's 9 for `item-summary`) and on #16's head. That gives 8 new
-   runs and 4 pairs: is the union's miss rate materially below a single run's?
-3. **If it holds: auto-merge.** The harness merges a green PR when all of these hold:
-   - the PR adds no migration (the diff has nothing under `src/App/Migrations/`)
-   - the PR touches nothing outside `src/`, `tests/` and its own `changes/<id>/`
-   - the acceptance files are byte-identical to the harness's commit
-   - every earlier change's tests pass, which CI already enforces
+1. **Inventory.** From `SETUP.md` and the demo, the exact list of what one app needs, who can create each item
+   today, and what proves each one works.
+2. **A provisioning script** in `aaas-deployments` (`scripts/provision-app.sh <name>`), run by you, with your
+   `gh` and `az` logins:
+   1. repo from the template
+   2. ruleset (`test` + `build`, squash only)
+   3. App installation extended to the repo
+   4. repo secrets
+   5. `deployments/dev/<name>/` PR
+   6. federated credentials
+   7. GHCR visibility
+3. **Verification, separate from creation** (`scripts/verify-app.sh <name>`). For each item it asks the platform,
+   not the script's own record:
+   - the App can mint a token for the repo
+   - the federated subject matches what a workflow presents
+   - the ruleset requires the right checks
+   - and so on for the rest of the list
 
-   The merge is deterministic code in the harness (D-17), never a model's decision. Prove it once with a new brief.
-4. One finding, and the OQ-5 position updated.
+   Every failure names the item and the fix.
+4. **A second app, for real.** Provision `aaas-app-<something>`, write its first request from the template, run
+   `create-change`, deploy it, then destroy it.
+5. One finding; OQ-15 narrowed or closed; D-row if settled.
 
 ## Decisions I will need from you
 
-- **Who merges.** I expect to argue for the harness, with the operator token, after the checks above. That needs no
-  new credential (D-14), and the ruleset still requires `test` + `build`. The alternative, GitHub's auto-merge
-  setting, would let any green PR merge, including one from a human that skipped the change record.
-- **The class.** I expect to argue for route-only changes with no migration and no new package. A migration stays
-  gated (OQ-7); so does a new dependency, because nothing yet reviews one.
-- **What counts as holding.** I expect to argue: the union catches every real defect so far and at least 90% of
-  planted bugs, with 0 false reds. If it does not, record it and move to step 3 rather than add a third run.
+- **Who runs provisioning.** I expect to argue: a script you run with your own `gh` and `az` logins, not a workflow.
+  A workflow would need an identity that can create repos, install Apps and add federated credentials. Those are the
+  widest rights in the system, sitting on the job that runs least-trusted content (the D-14 argument). Automating it
+  for a product is a later, separate decision.
+- **The App private key as a repo secret.** `release.yml` needs `AAAS_APP_PRIVATE_KEY` in every app repo. That is a
+  secret we copy N times, against the spirit of D-14. I expect to argue: accept it for step 3, open an OQ, and look
+  at an org-level secret or a token-minting service later. Do not block the step on it.
+- **A second app, or a throwaway.** I expect to argue for a small real one, with a name you choose, so it gets a
+  `requests/` history. Either way it is destroyed at the end.
 
 ## Done when
 
-- Two spec-testers per change in `create-change`, and a measured single-versus-pair miss rate.
-- Either one change merged by the harness without a human, or a recorded reason why not, with step 3 next.
+- `provision-app.sh` and `verify-app.sh` exist. `verify-app.sh` is green on `aaas-app-demo` and on the new app, and
+  red, naming the item, when one piece is removed on purpose.
+- A second app went from nothing to a running change through `create-change`, and was destroyed.
 
 ## Explicitly not this session
 
-- Deployment (`apply`), and merging #26. A new app from nothing (OQ-15). Superseding accepted behaviour (OQ-24).
-- OQ-21, the `workload_profile_name` diff, anything commercial (D-19).
+- Making provisioning a self-service product flow (intake, OQ-4). A third archetype. OQ-21. Anything commercial (D-19).
+- The shared spec-tester blind spot (finding 29), unless the new app's first change trips over it.
 
 ## Carried over
 
-- **Open PRs to decide:** `aaas-app-demo` #18 (`/items/summary`) and #19 (projects, supersedes #16), both green with
-  change records; #14, #15 and #16 predate the change record; `aaas-deployments` #26 (deploy of #17, no runtime
-  change). Merging any app PR opens a deployment PR whose apply is a create.
-- **Briefs in `aaas-agent/briefs/` are an inbox now.** The app repo holds the record. `item-due` (#11) has no record:
-  backfill it if someone writes its acceptance tests. The notebook briefs belong to the notebook app.
-- **Untracked in `aaas-agent`:** `acceptance/` (operator tests, `spec-tester/`, `score/`), the briefs, and the
-  `.gitignore` line. Commit the scorer if step 2c extends it.
-- **Run drivers:** `session-1010.command` is current. `phase7.command`, `phase6.command`, `session-1001.command`,
-  `notebook-*.command` and their log folders can go.
+- **The harness merge is indistinguishable from yours on GitHub** (`main0034`). It should comment on the PR: merged
+  by the harness, blockers none, acceptance files unchanged. Small; do it when next in `aaas-agent`.
+- **The shared blind spot** (finding 29): a "left out" rule tested at one value only (priority 1 of 1-5). A sharper
+  runbook example in `write-acceptance.md` is the cheap fix.
+- **Pending requests in the demo:** `item-tags`, `item-upcoming`. Old PRs #14-16 can be closed.
+- **Untracked in your `aaas-agent`:** `acceptance/` and old `briefs/` are archived in `aaas-docs/evidence/` and can be
+  deleted. `briefs/` is gitignored now.
+- **Run drivers:** `session-1010.command` is current (it reads `session-1010-logs/QUEUE`). The older `*.command` files
+  and log folders can go.
 - **Policy false positives:** pipes after `dotnet` (finding 26), the `nuget` path, heredoc `fix:`, a `grep` pattern with
   `\|` (finding 28).
 - **The permanent `workload_profile_name` diff**; **the operator token is admin**; **OQ-21**; **`gh pr close` refused by
   policy**; **no `.terraform.lock.hcl`**; **no ruleset on `aaas-deployments`**; **a capped run loses its work** (finding 22).
-- **Branches:** every merged branch is deleted. Open: the PR branches above, and `deploy/demo-97b30b4` (#26).
