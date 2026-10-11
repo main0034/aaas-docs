@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 10 October 2026, evening, at the end of roadmap step 2c. A change starts as `requests/<name>.md` in the app repo; two spec-testers write hidden acceptance tests, a builder writes the code, and for a change with no migration or dependency the harness merges it without a human - done once, #22 (finding 29). Coding conventions (CSharpier, Arrange/Act/Assert) are in each app's AGENT.md with CI checks. The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
+Written 11 October 2026, at the end of roadmap step 4. Every resource is tagged with its module version and archetype, and each estate records what it applied (finding 30). Before that, step 2c (10 October, evening): A change starts as `requests/<name>.md` in the app repo; two spec-testers write hidden acceptance tests, a builder writes the code, and for a change with no migration or dependency the harness merges it without a human - done once, #22 (finding 29). Coding conventions (CSharpier, Arrange/Act/Assert) are in each app's AGENT.md with CI checks. The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -51,6 +51,7 @@ Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, 
 
 
 - **Two spec-testers and the first harness merge** (10 October, evening, finding 29, D-26): `--spec-testers 2`, `--auto-merge` (`aaas-agent` #6). Pair 95% of planted bugs vs 90% single, both real defects, 0 false reds. `item-calendar` #22: two spec-testers + builder green on first push, **merged by the harness**, 16m 14s, $2.22
+- **Version visibility** (11 October, finding 30, D-28): `app-stack` v0.4.0 tags every resource `aaasModule` and `archetype` (infra-modules #3; the plan fails if a deployment's ref and `module_version` disagree). `apply` writes `applied.json` after a green gate through a separate `record` job. App CI: migrations immutable once *applied* (app-demo #23, template #7), proven against the live record locally and in CI (probe #24, red)
 - **Conventions and requests** (10 October, evening, D-27): AGENT.md "Conventions" with CI checks - CSharpier 1.3.0 and `scripts/check-test-layout.py` (app-demo #20, template #5). `requests/TEMPLATE.md` and `--change <name>` (app-demo #21, template #6, `aaas-agent` #7). `aaas-agent` holds nothing app-specific; the old briefs, hidden tests and scorer are in `aaas-docs/evidence/`
 
 ## Not started
@@ -59,12 +60,8 @@ Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, 
 
 ## Next step
 
-Per `NEXT-SESSION.md`, roadmap step 3: **a new app from nothing** (OQ-15) - one command takes a name to a running
-empty app with its identity verified before the first deploy. Competing:
-
-- **The shared spec-tester blind spot** (finding 29): a rule tested at one point only. A runbook example, not a role.
-- **OQ-21 — "immutable once applied", not "once merged".** Unchanged; roadmap step 4.
-- **The permanent `workload_profile_name` diff** on the Container App (finding 24). Harmless so far.
+Per `NEXT-SESSION.md`, roadmap step 5: **the first missing plane** - intake and conversation (OQ-4, OQ-22) or the
+control plane (OQ-8), chosen at the start. Then step 6, a new app from nothing (OQ-15), moved there on 10 October.
 
 ```bash
 ./run.sh --task write-acceptance --app-repo aaas-app-demo --at 97b30b4 --request @briefs/projects.md --non-interactive
@@ -113,17 +110,18 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: DESTROYED** since 1 October (`destroy` run 36908084546, green). No apply ran on 4 or 10
-  October. Nothing is billing.
-- `deployments/dev/demo/` pins `app-stack` **v0.3.2** and image `0ac9d66` (`aaas-app-demo/master`: PR #13, the priority
-  list), schema `AddItemDueDate`. **`0ac9d66` has never been applied**: its apply failed on the state lock and was not
-  re-run before the destroy. The next `apply` (a create) is its first deployment
+- **Infrastructure: RUNNING in `northeurope`** since 11 October 10:48 UTC (`apply` run 38132575864), unless the
+  session's last line says it was destroyed. About $17-20 a month, mostly Postgres. A dev-only exception to D-13:
+  `swedencentral` had no Burstable Postgres capacity (finding 30, OQ-25).
+  URL: `https://ca-demo-dev.salmonpond-00eb6e14.northeurope.azurecontainerapps.io`
+- `deployments/dev/demo/` pins `app-stack` **v0.4.0** (`module_version = "0.4.0"`) and image `d627b35`, the current
+  `aaas-app-demo/master`. **`applied.json`** records what the estate runs: `app-stack@0.4.0`, `d627b35`, migration
+  `20261010133821_AddProjects`.
 - `aaas-deployments` `master` has `-lock-timeout=10m` on plan and apply (`5378c12`, finding 25)
-- **`aaas-app-demo` `master` is `bfadd80`** (#22, merged by the harness): `/items/summary`, projects, the calendar, the
-  change records, conventions and `requests/`. **Never deployed** - the stack is destroyed; the last image ever applied
-  is older than `0ac9d66`. Pending requests: `item-tags`, `item-upcoming`.
-- **`release.yml` opens a deployment PR for every app merge.** #29-#31 (for #20, #21, #22) were closed unmerged on
-  10 October: on a destroyed stack each is a create. The next deploy is a deliberate one from current `master`.
+- **`aaas-app-demo` `master` is `d627b35`**: `/items/summary`, projects, the calendar (#22, merged by the harness), the
+  change records, conventions, `requests/` and "immutable once applied". Pending requests: `item-tags`, `item-upcoming`.
+- **`release.yml` opens a deployment PR for every app merge.** On a running stack that is an update; on a destroyed
+  one it is a create. Check which before merging.
 - **`aaas-app-demo` open PRs from 4 October:** #14, #15, #16 predate the change record; #6 (`feat/notebook`) never merge.
 - All six repos are public (needed for branch protection on the free plan)
 - `aaas-app-demo` `master` has a ruleset: PR required, squash only, `test` + `build` required and
@@ -140,6 +138,9 @@ trusting the wrong layer.
 
 ## Things to remember
 
+- **A green `destroy` does not free the resource group's name** (finding 30). Wait about 10 minutes before
+  re-creating the same deployment, or the old deletion takes the new resources with it.
+- **To re-run `apply` without Actions permission**, merge any change under the deployment directory.
 - **A harness merge looks like yours on GitHub** (`main0034`, the agent token's owner). Until the harness comments
   on the PR, tell them apart by the run record: `runs/<id>/report.md` ends "auto-merged by the harness".
 - **The plan's 5-hour limit ends runs mid-way and keeps nothing** (finding 22, again on 10 October). Queue long

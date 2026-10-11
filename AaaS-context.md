@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
-**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows · green measured against hidden tests: right 2 of 3 · a spec-tester that never sees the code caught the miss · every change carries its request and hidden acceptance tests in the app repo, enforced by CI · the harness merged its first change without a human  
-**Owner:** Martin Ingeson · **Last updated:** 2026-10-10 (v0.19)
+**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows · green measured against hidden tests: right 2 of 3 · a spec-tester that never sees the code caught the miss · every change carries its request and hidden acceptance tests in the app repo, enforced by CI · the harness merged its first change without a human · every estate says what it runs  
+**Owner:** Martin Ingeson · **Last updated:** 2026-10-11 (v0.20)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -76,6 +76,11 @@ merged `item-calendar` (#22): request in the repo → two spec-testers → build
 merged, 16 minutes, $2.22, nobody reading the code. Only a class of change may do this: no migration, no
 dependency, nothing outside `src/`, `tests/` and its own record. What still gets through is a blind spot every
 spec-tester run shares.
+
+**Proven on 2026-10-11 (finding 30, D-28).** Version visibility. Every resource is tagged with its module version and
+archetype (`app-stack` v0.4.0). After each green deploy the pipeline records the image, module and applied migration
+in `aaas-deployments`. App CI reads that record, so migrations are immutable once *applied* (OQ-21). The dev demo
+now runs in `northeurope`: `swedencentral` had no Burstable Postgres capacity on 10-11 October (OQ-25).
 
 **Not proven.** A new application from nothing (repo provisioning, OQ-15).
 
@@ -297,9 +302,8 @@ Cross-cutting rules to enforce in every module: naming convention, mandatory tag
 (customer, app, environment, archetype version, cost centre), diagnostic settings on
 by default, no public blob access, TLS minimums, managed identity over connection strings.
 
-The module currently emits `owner`, `costCenter`, `managedBy`, `module`, `environment` and
-`deployment` — **no version tag**, so the §5 control plane cannot report what version each
-estate runs without reading every deployment's `main.tf`. See OQ-16.
+Since `app-stack` v0.4.0 (D-28) every resource also carries `aaasModule` (`app-stack@0.4.0`) and `archetype`, so
+the §5 control plane can report what version each estate runs from Azure metadata alone.
 
 ### 4.2 Archetypes
 
@@ -420,6 +424,7 @@ loop. See OQ-4 and OQ-5 — this is the topic for the next session.
 | D-25 | **The change record lives in the app repo: `changes/<id>/` holds the request and its acceptance tests.** The harness writes it (brief before the builder starts, tests after its first push); CI compiles the tests into the endpoint suite and `scripts/check-changes.sh` keeps the record harness-only and immutable once merged | 2026-10-10 | Resolves OQ-23's "where". Replaces the planned private `aaas-acceptance` repo at Martin's request: the request and the behaviour it was accepted on travel with the code as its audit log, and accepted behaviour stays tested as regression. No new repo, token or CI job (D-14). Independence comes from order, not secrecy: the tests are off disk while the builder runs, and fix rounds may read but not edit them (refused by policy, by CI and by a byte check). Accepted limit: a hostile builder could rewrite history with a forged trailer. Cost: a later change cannot alter accepted behaviour without a human (OQ-24) |
 | D-26 | **The harness may merge a change without a human when two independent spec-testers' tests pass and the change adds no migration, no dependency and nothing outside `src/`, `tests/` and its own record** (`change.merge_blockers`, `--auto-merge`) | 2026-10-10 | Resolves OQ-5 for one class. A pair caught 95% of planted bugs and both real defects with 0 false reds, against 90% for one run; the builder cannot touch the tests (policy, CI, byte check). A migration stays gated (OQ-7), and so does a dependency, because nothing reviews one. The check is deterministic code (D-17), not a model's judgement. Accepted risk: a rule every spec-tester run tests at one point only (finding 29) |
 | D-27 | **Coding conventions live in the app's AGENT.md "Conventions", each with a CI check; requests live in the app's `requests/`, written from `requests/TEMPLATE.md`** | 2026-10-10 | Lower-level instructions belong with the app they govern, and a convention without a check is a request the agent can skip (D-17). First two: CSharpier, and Arrange/Act/Assert tests. Requests in the repo make `aaas-agent` application-free and give the requester one structure (rules, interface, examples) that both agents read |
+| D-28 | **Each estate is described twice: module version and archetype as tags on every resource, and what it actually runs (image, module, applied migration) in `aaas-deployments/<deployment>/applied.json`, written by the pipeline after a green readiness gate. Migrations are immutable once applied, read from that record** | 2026-10-11 | Resolves OQ-16 and OQ-21. Tags answer "what does each estate run" from Azure alone; the record is the observed state, kept in git where app CI can read it without a token. The version is pinned twice in a deployment (`?ref=` and `module_version`) and a plan-time precondition makes a mislabelled release impossible to apply. The record job has `contents: write`, the apply job does not |
 | D-19 | **This is a build-to-learn exercise, not a business in formation** | 2026-09-20 | Stated preference: play with the technology rather than settle the commercial model. The commercial and go-to-market open questions are parked rather than deleted, so the build proceeds without them blocking and the thinking is not lost. Revisit when there is something worth selling |
 
 ---
@@ -493,6 +498,11 @@ commercial and start being legal.
   **2026-10-10, evening (finding 29, D-26) - resolved for one class.** Two spec-testers; the harness merged #22 with
   no human. Everything with a migration or a dependency still waits for one. The open part is narrower: the shared
   blind spot, and how a harness merge is told apart from a human one in the audit trail.
+- **OQ-25 — Region capacity.** On 10-11 October `swedencentral` had no Burstable Postgres for this subscription at
+  either allowed size (`RegionalAllocationFailed`, three creates). The dev demo moved to `northeurope`. For a customer,
+  residency (D-13) means we cannot move them, so a capacity shortfall is "your app cannot be created today". Open:
+  a fallback SKU tier (General Purpose, ~100 USD/month, excluded on cost), a capacity reservation, or a create path
+  that waits and retries. And a destroy must confirm the deletion has *finished* before the name is reused (finding 30).
 - **OQ-24 — Superseding accepted behaviour.** Since D-25, every merged change's acceptance tests keep running and
   its record is immutable. A later request that deliberately changes that behaviour turns an old test red, and
   neither the builder nor CI may edit it. Today that is an admin merge by a human. Open: does the spec-tester of
@@ -526,12 +536,6 @@ commercial and start being legal.
   and pushed nothing. A subscription is a capacity ceiling as well as a licence problem.
   **28 September (finding 23):** one fix-forward round cost $0.38, the same as the push it fixed.
   A red check roughly doubles the agent cost of a change; that is the multiplier to price.
-- **OQ-21 — "Immutable once merged" is the wrong rule.** CI forbids editing a migration once it
-  is on `master`, but the migration that failed in Azure was merged and never applied. Fixing it
-  forward is therefore blocked by the guard, and recovery needs a human override — at exactly
-  the moment an application is broken. The rule should be "immutable once **applied**", which
-  requires the pipeline to know what each estate has actually applied. That is the same missing
-  fact as OQ-16 (version visibility), reached from the other direction.
 - **OQ-22 — What a non-technical user is told when a deploy fails.** The pipeline half is done
   (D-22): the deployment PR carries the URL on success, and on failure the reason and the
   init container's own error line. Still open: the §2 persona reads neither a PR nor
@@ -569,10 +573,6 @@ commercial and start being legal.
   This list *is* the productisation surface. Whatever automates it must also assert afterwards
   that the presented identity matches the registered one, rather than waiting for a deploy to
   fail eight minutes in.
-- **OQ-16 — Version visibility across the estate.** Resources carry no archetype or module
-  version tag, so §5's control plane cannot answer "what is each customer running" from cloud
-  metadata. Blocks OQ-8 (rollout) in practice: you cannot stage an upgrade across estates you
-  cannot enumerate.
 - **OQ-17 — GitHub plan cost.** Branch protection and rulesets are unavailable on private repos
   on the Free plan; the POC repos were made public to get real enforcement. Customer repos are
   necessarily private, so enforcement requires a paid plan or an organisation. A per-customer
@@ -593,7 +593,7 @@ serves; if the two disagree, one of them is wrong and gets fixed at session end.
 **Where the planes stand (§5).** Source of truth: done, for an app that already exists. Delivery:
 done and hardened (plan, apply, readiness gate D-22, clean create, destroy). Agent: the app-developer
 role works with fix-forward (D-23); intake, infra-as-a-role and operator do not exist and hosting is
-open (OQ-4). Conversation plane: nothing. Control plane: nothing, and blocked in practice by OQ-16.
+open (OQ-4). Conversation plane: nothing. Control plane: nothing, but no longer blocked: estates describe themselves (D-28).
 
 **Everything since 23 September** closed one reason green did not mean works (D-22, Phase 4c, D-23,
 OQ-14, D-24). They are one question - can a merge happen without a human (OQ-5) - which is the hinge
@@ -605,9 +605,9 @@ of the product: the §2 user cannot review a PR.
 | 2a | ~~**A spec-tester role.**~~ Done 2026-10-04 (finding 27): no false reds, #16 caught, 15/17 planted bugs | OQ-23 | ✓ |
 | 2b | ~~**Act on it.**~~ Done 2026-10-10 (finding 28, D-25): the change record; hidden tests are part of the required check. No auto-merge: one spec-tester run in three missed a known defect | OQ-5, OQ-23 | ✓ (reason recorded) |
 | 2c | ~~**Two spec-testers per change**~~ Done 2026-10-10 (finding 29, D-26): pair 95% vs single 90%; #22 merged by the harness | OQ-5 | ✓ |
-| 3 | **A new app from nothing** - repo, ruleset, identity, federated credentials, deployment directory, verified after creation | OQ-15 | One command or workflow takes a name to a running empty app, and asserts its identity before the first deploy |
-| 4 | **Version visibility** - module/archetype version tags on resources, and what each estate has applied | OQ-16, OQ-21 | "What is each app running" is answered from Azure metadata; the migration guard becomes "immutable once applied" |
+| 4 | ~~**Version visibility**~~ Done 2026-10-11 (finding 30, D-28): tags on every resource, `applied.json` per estate, immutable once applied | OQ-16, OQ-21 | ✓ |
 | 5 | **The first missing plane** - intake + conversation (OQ-4, OQ-22) or control plane (OQ-8). Chosen by interest when step 4 is done (D-19) | §5 | One end-to-end path through that plane, however thin |
+| 6 | **A new app from nothing** (moved after 5 on 2026-10-10, by choice: the change loop matters more than onboarding while there is one app) - repo, ruleset, identity, federated credentials, deployment directory, verified after creation | OQ-15 | One command or workflow takes a name to a running empty app, and asserts its identity before the first deploy |
 
 Off the path, picked up only if they block a step: the `workload_profile_name` diff, a ruleset on
 `aaas-deployments`, `.terraform.lock.hcl`, the policy's argument-as-command false positives.

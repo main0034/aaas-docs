@@ -1,113 +1,92 @@
 # Next session
 
-Written 10 October 2026, evening, at the end of roadmap step 2c. Replaced wholesale at the end of every
-session — this file is intent, not history. What actually happened lives in `FINDINGS.md`, where things
-stand lives in `STATUS.md`, and the ordered plan is `AaaS-context.md` §9.
+Written 11 October 2026 at the end of roadmap step 4. Replaced wholesale at the end of every session —
+this file is intent, not history. What actually happened lives in `FINDINGS.md`, where things stand
+lives in `STATUS.md`, and the ordered plan is `AaaS-context.md` §9.
 
 ---
 
 ## Topic
 
-**Roadmap step 3: a new app from nothing (OQ-15).** One command or workflow takes a name, `aaas-app-<name>`,
-to a repository that the change flow can work in and that deploys. It then *asserts* each piece of identity
-before the first deploy, rather than finding out eight minutes into one. Done with a real second app: a
-first request from its `requests/`, through `create-change`, deployed.
+**Roadmap step 5: the first missing plane, one thin path through it.** Two candidates, chosen by interest
+(D-19). This session starts by choosing:
+
+- **A. Intake and conversation** (OQ-4, OQ-22): the §2 user describes what they want in a chat. An intake role
+  turns that into `requests/<name>.md` from the template, asking only what the template needs. Then
+  `create-change` runs, and the user is told the result in plain words, including when it failed.
+- **B. Control plane** (OQ-8): one page or command that lists every estate (module, archetype, image, applied
+  migration, health) from the tags and `applied.json` (D-28). Then one module upgrade rolled out through it.
 
 One topic. If something else turns out to block it, say which and why before widening.
 
 ## Why this one
 
-The change loop is finished for an app that already exists. A request becomes merged code with no human for
-one class of change (finding 29, D-26). But every app so far was set up by hand. Each of these failed at
-least once and none failed legibly (OQ-15):
-- the repo from the template
-- the `aaas-bot` App installation
-- two repository secrets
-- the deployment directory
-- a federated credential per environment
-- the ruleset
-- the public GHCR package
-
-This list *is* the productisation surface, and §2's user cannot do any of it.
+The delivery and agent planes are done for an existing app. A request becomes a merged, deployed change, and
+every estate says what it runs. Two of §5's five planes are still empty, and the product cannot be used by its
+§2 user without one of them. Step 6 (a new app from nothing) was moved after this on 10 October.
 
 ## Read first, in this order
 
 | File | Why |
 |---|---|
-| `AaaS-context.md` OQ-15, OQ-17, D-14, D-26 | What provisioning has to produce, and what it must not add |
-| `SETUP.md` | How the demo was bootstrapped by hand: the list to automate |
-| `aaas-deployments/agent/create-app.md` §0, `.github/workflows/` | What a new repo must have before the first agent run |
-| `aaas-app-template` | What a new repo starts from (conventions, `requests/`, `changes/`) |
-| `FINDINGS.md` 2-3, 19, 21 | The identity failures, and what they looked like |
+| `AaaS-context.md` §2, §5, §6, OQ-4, OQ-8, OQ-22 | The user, the planes, what each candidate has to answer |
+| `aaas-app-demo/requests/TEMPLATE.md` | What intake (A) has to produce |
+| `aaas-deployments/deployments/dev/demo/applied.json`, `app-stack` README "tags" | What the control plane (B) can read |
+| `FINDINGS.md` 29-30 | The change loop and version visibility this builds on |
 
 ## State to verify before starting
 
-- `aaas-app-demo` `master` is `bfadd80` (#22, the harness merge); `aaas-agent` `master` is `0be7b1f` (#7) or later;
-  `aaas-app-template` `master` is `83c5321` (#6).
-- `rg-demo-dev` does not exist; no deployment PR on `aaas-deployments` is open (#29-#31 were closed unmerged).
-- No `index.lock` / `HEAD.lock` / `tmp_obj_*` in any repo's `.git`. Your local repos are pulled.
-- `az` works in your terminal (this session will need it: there is no Azure login anywhere else).
+- **Infrastructure:** the demo was **running in `northeurope`** at the end of step 4, unless Martin destroyed it
+  (STATUS says which). If it is up, decide first whether this session needs it. A only needs it at the end; B
+  reads it throughout.
+- `aaas-deployments/deployments/dev/demo/applied.json` matches `/ready`. `app-stack` latest tag is `v0.4.0`.
+- No `index.lock` / `HEAD.lock` / `tmp_obj_*` in any repo's `.git`; your local repos are pulled.
 
-## The work
+## The work (sketch, settled once A or B is chosen)
 
-1. **Inventory.** From `SETUP.md` and the demo, the exact list of what one app needs, who can create each item
-   today, and what proves each one works.
-2. **A provisioning script** in `aaas-deployments` (`scripts/provision-app.sh <name>`), run by you, with your
-   `gh` and `az` logins:
-   1. repo from the template
-   2. ruleset (`test` + `build`, squash only)
-   3. App installation extended to the repo
-   4. repo secrets
-   5. `deployments/dev/<name>/` PR
-   6. federated credentials
-   7. GHCR visibility
-3. **Verification, separate from creation** (`scripts/verify-app.sh <name>`). For each item it asks the platform,
-   not the script's own record:
-   - the App can mint a token for the repo
-   - the federated subject matches what a workflow presents
-   - the ruleset requires the right checks
-   - and so on for the rest of the list
-
-   Every failure names the item and the fix.
-4. **A second app, for real.** Provision `aaas-app-<something>`, write its first request from the template, run
-   `create-change`, deploy it, then destroy it.
-5. One finding; OQ-15 narrowed or closed; D-row if settled.
+- **A.**
+  1. An `intake` task in the harness: a conversation that ends in a request file. Its runbook is the template's
+     sections; it has no tools beyond writing that one file.
+  2. A thin chat front-end, a local web page is enough, that runs intake, then `create-change`, and reports
+     back in the user's words.
+  3. One real request from a "non-technical" brief, end to end, with Martin playing the user.
+- **B.**
+  1. `estates` as a script or small page: every `applied.json` plus `az resource list --tag aaasModule` (read
+     identity), and drift where they disagree.
+  2. `app-stack` v0.4.1, a harmless change, rolled out to the demo through it.
+  3. What OQ-8's "not all at once" needs, written down.
 
 ## Decisions I will need from you
 
-- **Who runs provisioning.** I expect to argue: a script you run with your own `gh` and `az` logins, not a workflow.
-  A workflow would need an identity that can create repos, install Apps and add federated credentials. Those are the
-  widest rights in the system, sitting on the job that runs least-trusted content (the D-14 argument). Automating it
-  for a product is a later, separate decision.
-- **The App private key as a repo secret.** `release.yml` needs `AAAS_APP_PRIVATE_KEY` in every app repo. That is a
-  secret we copy N times, against the spirit of D-14. I expect to argue: accept it for step 3, open an OQ, and look
-  at an org-level secret or a token-minting service later. Do not block the step on it.
-- **A second app, or a throwaway.** I expect to argue for a small real one, with a name you choose, so it gets a
-  `requests/` history. Either way it is destroyed at the end.
+- **A or B.** I expect to argue for **A**. It is where the §2 user meets the product, and the request template and
+  `create-change` are already half of it. B is mostly a report while there is one estate; it earns its keep at N
+  estates, which needs step 6 first.
+- **For A: where intake runs.** I expect to argue: the same container harness, a new task, interactive. Hosting it
+  for real (OQ-4) waits.
+- **Infrastructure:** keep the demo up across sessions (about $17-20 a month, finding 25), or destroy and re-create
+  when needed (about 11 minutes, if the region has capacity).
 
 ## Done when
 
-- `provision-app.sh` and `verify-app.sh` exist. `verify-app.sh` is green on `aaas-app-demo` and on the new app, and
-  red, naming the item, when one piece is removed on purpose.
-- A second app went from nothing to a running change through `create-change`, and was destroyed.
+- **A:** a request typed in plain words by someone playing the §2 user became a merged, deployed change, and the
+  answer they got back named what changed, without them seeing git.
+- **B:** every estate is listed with what it runs and whether that matches Azure, and one module upgrade went
+  through that view.
 
 ## Explicitly not this session
 
-- Making provisioning a self-service product flow (intake, OQ-4). A third archetype. OQ-21. Anything commercial (D-19).
-- The shared spec-tester blind spot (finding 29), unless the new app's first change trips over it.
+- The other candidate. Step 6 (a new app from nothing). Anything commercial (D-19).
 
 ## Carried over
 
-- **The harness merge is indistinguishable from yours on GitHub** (`main0034`). It should comment on the PR: merged
-  by the harness, blockers none, acceptance files unchanged. Small; do it when next in `aaas-agent`.
-- **The shared blind spot** (finding 29): a "left out" rule tested at one value only (priority 1 of 1-5). A sharper
-  runbook example in `write-acceptance.md` is the cheap fix.
+- **A green destroy does not free the name** (finding 30). `destroy.yml` should wait until the deletion has
+  *finished*: `az group show` not found, and nothing tagged `deployment=<name>` left. `apply.yml` should refuse to
+  create into a resource group that is still being deleted. Both are workflow changes, so Martin pushes them.
+- **Region capacity** (OQ-25): `swedencentral` had no Burstable Postgres on 10-11 October. The demo's `location` is
+  `northeurope` until it is moved back deliberately.
+- **The harness merge looks like Martin's** on GitHub. The harness should comment on the PR when it merges.
+- **The shared spec-tester blind spot** (finding 29): a "left out" rule tested at one value only.
 - **Pending requests in the demo:** `item-tags`, `item-upcoming`. Old PRs #14-16 can be closed.
-- **Untracked in your `aaas-agent`:** `acceptance/` and old `briefs/` are archived in `aaas-docs/evidence/` and can be
-  deleted. `briefs/` is gitignored now.
-- **Run drivers:** `session-1010.command` is current (it reads `session-1010-logs/QUEUE`). The older `*.command` files
-  and log folders can go.
-- **Policy false positives:** pipes after `dotnet` (finding 26), the `nuget` path, heredoc `fix:`, a `grep` pattern with
-  `\|` (finding 28).
-- **The permanent `workload_profile_name` diff**; **the operator token is admin**; **OQ-21**; **`gh pr close` refused by
-  policy**; **no `.terraform.lock.hcl`**; **no ruleset on `aaas-deployments`**; **a capped run loses its work** (finding 22).
+- **Policy false positives**, the permanent `workload_profile_name` diff, the operator token is admin,
+  `gh pr close` refused by policy, no `.terraform.lock.hcl`, no ruleset on `aaas-deployments`, a capped run loses
+  its work (finding 22).
