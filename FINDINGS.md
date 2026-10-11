@@ -1342,6 +1342,114 @@ container, published on `127.0.0.1:8765` only. One conversation, four roles:
 - **One mechanical trap.** A file copied into the outputs directory and committed to the Mac in the same minute
   arrived stale once. Check the content on the device before committing.
 
+## 32. Screens: the golden path gets a user interface, and the user is told where to look
+
+11 October 2026, evening. Roadmap step 5b (OQ-26). `aaas-app-template` #8, `aaas-app-demo` #26, `aaas-agent` #10,
+`aaas-deployments` #37 (runbooks), deployment PR #38.
+
+**What was decided at the start.**
+- Martin chose 5b over step 6. He asked for Blazor rather than Razor.
+- Agreed, as **static server-side rendering only**: no render mode, no `blazor.web.js`, no JavaScript.
+  - Interactive Server needs a SignalR circuit per user. That does not survive `min_replicas = 0`, the 42 s cold
+    start, or two replicas without sticky sessions.
+  - WebAssembly is a second build and a download.
+- **Pages reach data only through the app's own routes.** `AppApi` makes loopback HTTP calls; a page never touches
+  `AppDbContext`.
+  - Blazor forms post back to the page, not to a JSON `PUT`. Without this rule, a page would carry its own copy of
+    the rules (trimming, limits), and nothing would test that copy.
+  - The spec-testers stay on routes. Through `AppApi`, what they accepted is what the screen does: the edit form
+    gets item-edit's trim-then-check rule for free. A refusal comes back as the route's own words.
+
+**What was built.**
+- **In the template and the demo.**
+  - `AppShell.razor` holds the document, with styles inline.
+  - `AppApi` throws if a page calls a path or method that no route serves. A middleware marks unmatched responses
+    so it can tell "this route answered 404" from "no such route". Two planted bugs (`POST /item`, `PUT /items`)
+    both failed the page tests with that message.
+  - `PageTest` renders a page against a seeded Postgres and submits its forms the way a browser does. It runs in
+    the endpoint step.
+  - `scripts/check-pages.py` enforces four things: no database under `Components/`, no interactive rendering or
+    `<script>`, page paths are `/` or `/app/...`, and every page has a `GetPageAsync<Page>` test.
+  - AGENT.md has a "Screens" section, and `requests/TEMPLATE.md` has a *Screen* section.
+- **The demo's pages.**
+  - `/` shows items newest first, links to each, and has an add form.
+  - `/app/items/{id}` edits title, note and priority, sets the due date, and marks done or reopens. It needed a new
+    `GET /items/{id}`.
+  - 221 tests pass.
+- **In the harness.**
+  - `harness/screens.py` finds the pages a change added or changed from the diff, with each page's `<PageTitle>`
+    and the pages that link to it.
+  - After delivery it opens each page on the live app (`{id:int}` → `0`; it requires 200 and HTML).
+  - It gives the reporter "Where the user sees it: the page "Edit item", opened from "Items" by choosing one". When
+    no page changed, it gives "no screen changed - describe none".
+  - The builder is not asked where its change is: the diff says.
+
+**What cost time.**
+- **The image build broke on the lock file.** With `.razor` files present, the SDK adds
+  `Microsoft.AspNetCore.App.Internal.Assets` (the package that ships `blazor.web.js`). The Dockerfile restores from
+  the project file *before* `src/` is copied, so it computed a different lock file and `--locked-mode` failed in
+  `build` (template #8, first push).
+  - Fix: `<RequiresAspNetWebAssets>false</RequiresAspNetWebAssets>`. That is also the "no JavaScript" rule, written
+    down where the SDK reads it.
+  - `test` was green throughout: only the image build sees the difference.
+- **Antiforgery is off for forms** (`DisableAntiforgery()`). The app has no sign-in, so there is no session to forge a
+  request on, and every route can be called directly anyway.
+  - The tokens would also fail across replicas and restarts: the Data Protection keys are per container. Persisting
+    the keys would mean a key table and a database read at startup.
+  - This changes when end users sign in.
+- **The session had no GitHub link** (`add_repo` refused), and the container's proxy blocks `api.github.com` without
+  one. All git and API work went through the Mac's VM shell with the operator PAT, using bundles copied into
+  `aaas/.session-bundles/`.
+  - The PAT has no Workflows scope, so the `check-pages.py` CI step waits for Martin (`feat/pages-ci`,
+    `feat/screens-ci`).
+  - **The stale-copy trap from finding 31 struck twice.** Bundles and a PR body rewritten under the same name arrived
+    stale. Use a new name per version, and compare checksums on the device.
+- **`agent/` is a guardrail path in `aaas-deployments`.** The runbook PR (#37) is red on `guardrails` by design and is
+  merged by Martin. The harness clones `aaas-deployments` from GitHub, so a chat run uses the new runbooks only after
+  that merge.
+
+**The run.** Martin played the §2 user (run `20261011T144330Z`). He asked for the Items list as a table showing a
+snippet of each note.
+- **Intake: about 4m 30s, $1.02.**
+  - It spoke about "the Items page" by its title, described what is on it now, and asked two questions: how much of
+    the note to show (60 characters), and what to show for a missing value (a dash).
+  - It wrote a *Screen* section. Its Interface named `GET /items`, "unchanged".
+  - It took two passes of the completeness check: once because Interface was missing, once because it had no route.
+- **Go ahead → live: 20m 09s, $1.91**, about the same as the 25m 50s of finding 31 but without a red round.
+
+| Stage | Time | Cost |
+|---|---|---|
+| Spec-tester A, then B (serial) | 4m 14s + 5m 08s | $0.55 + $0.77 |
+| Builder → PR #28 (changes `Home.razor` and its page test only) | 4m 22s | $0.58 |
+| CI green on first push; harness merges #28 | 1m 29s | - |
+| Deployment PR #40, gate, merge, apply, `applied.json` | 4m 28s | - |
+| Screens checked live, reporter | 6s | $0.02 |
+
+- **The answer was truthful.** The facts said "Where the user sees it: the start page" and "The page opens on the live
+  app: checked". The answer was "Your items list is now showing as a table on the start page", plus the address. Nothing
+  was invented.
+- **And a real defect went live.**
+  - An item added from the app's own form with an empty note stores `""`. My add form sent the empty textarea as
+    given; the edit form already sent `null`. The route stores what it is given.
+  - The new table's rule "no note shows —" checked only for `null`, so the cell was blank. Found by a probe on the
+    live app; fixed by hand in demo #29 and template #10, with two page tests that are red on #28's code.
+
+**What it says.**
+- **A screen-only change has no independent test.**
+  - Every rule in this request was about the screen. Both spec-testers did what the runbook says: they tested
+    `GET /items` (8 and 9 tests, all of them true before the change) and listed the screen rules as "not tested".
+  - The builder's page test was the only check on the table, so the builder graded itself. That is the situation
+    D-25 and D-26 exist to prevent, and the harness auto-merged it, because a page under `src/` is inside the
+    D-26 class.
+  - **Until spec-testers test screens, D-26 is weaker for UI changes than it looks.**
+- **The cheap fix is near.** A spec-tester is already black-box: HTTP in, JSON out. A page is HTTP in, HTML out.
+  `AcceptanceBase` can gain `GetPageAsync` and `SubmitFormAsync`, and the runbook can say "test the *Screen* section
+  through the page".
+- **Static SSR was the right call for this.** The page is plain HTML any test can read, with no browser or
+  Playwright needed.
+- **The delivery half held up.** The diff, not the builder, decided where the change is. The live check took 3
+  seconds, and the reporter said no more than the facts.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
