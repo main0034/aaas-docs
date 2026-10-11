@@ -1209,6 +1209,68 @@ merge. The harness should say on the PR that it merged and why. Carried over.
   it into the record. `aaas-agent` now holds nothing about one application: its briefs, hidden tests and
   scorer moved to `aaas-docs/evidence/`.
 
+## 30. Version visibility: every resource says what it runs, every estate records what it applied
+
+10-11 October 2026. Roadmap step 4 (OQ-16, OQ-21).
+
+**What was built.**
+- **Version and archetype tags.** `app-stack` v0.4.0 tags every resource `aaasModule = app-stack@0.4.0` and
+  `archetype = web-app-with-data`. The version is a constant in the module, and a deployment pins it twice: the
+  `?ref=` and a new required `module_version`. Two checks keep them honest:
+  - the module's precondition on the resource group fails the plan when they disagree
+  - `validate_deployment.py` fails the PR earlier
+
+  A release that forgets to bump the constant cannot mislabel an estate.
+- **An applied record per estate.** After a green readiness gate, `apply` writes
+  `deployments/<env>/<name>/applied.json`: image, module, the migration `/ready` reports, revision, commit, run.
+  - A separate `record` job commits it with `GITHUB_TOKEN`, so the job holding the Azure write identity keeps a
+    read-only token.
+  - A `GITHUB_TOKEN` push starts no workflow, and a paths filter excludes the file anyway: no apply loop.
+    Confirmed: no run followed the record commit.
+  - The guardrails job refuses a PR that touches an `applied.json`.
+- **Migrations immutable once applied, not once merged.** The app's `check-migrations.sh` reads the estate's
+  record. A merged migration newer than the applied one never reached a database and may be corrected in place;
+  that is exactly OQ-21's case, a migration that failed in Azure and rolled back. With no record, every merged
+  migration counts as applied, as before.
+
+**Proven on 11 October.**
+- Create on v0.4.0 green in about 11 minutes. The plan showed both tags on all 14 resources.
+- `/ready` → `database: ok`, `managed-identity`, `20261010133821_AddProjects`. The harness-merged
+  `/items/calendar` answers.
+- The first record was committed by the pipeline: `app-stack@0.4.0`, image `d627b35`, migration `AddProjects`.
+- The migration check against the live record:
+  - editing an applied migration: refused, locally and in GitHub's CI (probe PR #24, closed)
+  - editing a merged but unapplied one: allowed, with a notice
+
+**It took four attempts to get a database.**
+1. Two creates on `B_Standard_B1ms` in `swedencentral` (evening of 10 October, morning of 11 October), then one on
+   `B_Standard_B2s`. All three failed with `RegionalAllocationFailed`: "We do not have sufficient capacity for
+   the requested compute size in this region." Not quota, not our code: Azure had no Burstable Postgres for this
+   subscription in Sweden at either size.
+2. **The dev demo moved to `northeurope`**, decided by Martin as a dev-only exception to D-13. The demo holds no
+   real data; customer estates stay in `swedencentral`. The schema already allowed it.
+3. **A green `destroy` did not free the name.** Merged straight after the destroy, the `northeurope` create made
+   the VNet, workspace and DNS zone, and each was **404 a moment later**. Terraform's state then listed resources
+   that did not exist. The most likely cause is Azure still finishing the deletion of the old `rg-demo-dev`, the
+   same name, after `az group exists` already said `false`. The new resources went down with it. Martin had
+   seen the same gap himself.
+4. Recovery was finding 20's rule: destroy again, then wait about 10 minutes before re-creating. Merging a
+   comment-only change under `deployments/dev/demo/` re-ran `apply` without giving any token Actions
+   permission.
+
+**What it says.**
+- **"What is each app running" now has an answer in two places.** Azure tags give module and archetype. The git
+  record gives image and schema, as observed after the gate rather than as requested. The control plane (§5) can
+  enumerate estates without reading anyone's `main.tf`. That unblocks OQ-8 (rolling a module upgrade out).
+- **"Immutable once applied" needed a fact the pipeline already had.** `/ready` reported the migration since
+  D-22; it just was not kept anywhere.
+- **Region capacity is a failure mode we did not have.** One region and one SKU family is a single point of
+  failure for creates. For a customer it would mean "your app cannot be created today". The residency promise
+  (D-13) makes it worse, because moving the region is not ours to decide. New OQ-25.
+- **A destroy needs the same "ask the platform" check an apply got in D-22.** `az group exists` answers the
+  wrong question. Waiting for the deletion to finish belongs in `destroy.yml`, and a create should refuse to
+  start into a resource group that is still being deleted. Both are workflow changes; carried over.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
