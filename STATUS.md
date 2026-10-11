@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 11 October 2026, at the end of roadmap step 4. Every resource is tagged with its module version and archetype, and each estate records what it applied (finding 30). Before that, step 2c (10 October, evening): A change starts as `requests/<name>.md` in the app repo; two spec-testers write hidden acceptance tests, a builder writes the code, and for a change with no migration or dependency the harness merges it without a human - done once, #22 (finding 29). Coding conventions (CSharpier, Arrange/Act/Assert) are in each app's AGENT.md with CI checks. The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
+Written 11 October 2026, afternoon, at the end of roadmap step 5. **A plain-words conversation became a live change with no human merge** (finding 31): `./run.sh --task converse` serves a chat page; intake writes the request, `create-change` builds and auto-merges it, the harness merges its image-only deployment PR and answers the user in plain words once `applied.json` names the new image. The app has no screens, so the user cannot yet use what they asked for (OQ-26). Before that, step 4 (11 October, morning): every resource is tagged with its module version and archetype, and each estate records what it applied (finding 30). Before that, step 2c (10 October, evening): A change starts as `requests/<name>.md` in the app repo; two spec-testers write hidden acceptance tests, a builder writes the code, and for a change with no migration or dependency the harness merges it without a human - done once, #22 (finding 29). Coding conventions (CSharpier, Arrange/Act/Assert) are in each app's AGENT.md with CI checks. The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -52,6 +52,7 @@ Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, 
 
 - **Two spec-testers and the first harness merge** (10 October, evening, finding 29, D-26): `--spec-testers 2`, `--auto-merge` (`aaas-agent` #6). Pair 95% of planted bugs vs 90% single, both real defects, 0 false reds. `item-calendar` #22: two spec-testers + builder green on first push, **merged by the harness**, 16m 14s, $2.22
 - **Version visibility** (11 October, finding 30, D-28): `app-stack` v0.4.0 tags every resource `aaasModule` and `archetype` (infra-modules #3; the plan fails if a deployment's ref and `module_version` disagree). `apply` writes `applied.json` after a green gate through a separate `record` job. App CI: migrations immutable once *applied* (app-demo #23, template #7), proven against the live record locally and in CI (probe #24, red)
+- **The conversation plane, thinly** (11 October, afternoon, finding 31, D-29): `--task converse` (`aaas-agent` #8, #9; runbook `aaas-deployments/agent/intake.md`). Martin as the §2 user: intake 4 exchanges, 10m 28s, $0.93, request complete first time. Go ahead → live **25m 50s**: two spec-testers (13m, serial), builder red on length-before-trim, both spec-testers caught it, one fix round, harness merged app PR #25 and deployment PR #36, `applied.json` → `1b50207`. $3.70 in all. `PUT /items/{id}` verified on the live app
 - **Conventions and requests** (10 October, evening, D-27): AGENT.md "Conventions" with CI checks - CSharpier 1.3.0 and `scripts/check-test-layout.py` (app-demo #20, template #5). `requests/TEMPLATE.md` and `--change <name>` (app-demo #21, template #6, `aaas-agent` #7). `aaas-agent` holds nothing app-specific; the old briefs, hidden tests and scorer are in `aaas-docs/evidence/`
 
 ## Not started
@@ -60,8 +61,14 @@ Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, 
 
 ## Next step
 
-Per `NEXT-SESSION.md`, roadmap step 5: **the first missing plane** - intake and conversation (OQ-4, OQ-22) or the
-control plane (OQ-8), chosen at the start. Then step 6, a new app from nothing (OQ-15), moved there on 10 October.
+Per `NEXT-SESSION.md`: decide between **step 5b, a screen for the user** (OQ-26, proposed 11 October) and **step 6, a
+new app from nothing** (OQ-15), then do one of them. The chat runs with:
+
+```bash
+./run.sh --task converse --app-repo aaas-app-demo      # then http://localhost:8765
+```
+
+Other runs, for reference:
 
 ```bash
 ./run.sh --task write-acceptance --app-repo aaas-app-demo --at 97b30b4 --request @briefs/projects.md --non-interactive
@@ -85,8 +92,9 @@ export GH_TOKEN=...                  # fine-grained PAT: deployments + the app r
 
 From a linked cloud session, Claude cannot type into Terminal (click-only) and the linked
 shell has no Docker: the run goes in a script Martin starts once, logged through `script(1)`
-(finding 21). `session-1010.command` in the `aaas` folder is the current one: a watcher only. Started once, it
-runs the harness whenever `session-1010-logs/RERUN` appears (one line of `run.sh` arguments) and stops on `session-1010-logs/STOP`. A RERUN written before the double-click runs at once.
+(finding 21). `session-1011.command` in the `aaas` folder is the current one: double-clicked, it starts the chat and
+opens the page; `session-1011-logs/STOPRUN` stops the chat, `RERUN` (one line of `run.sh` arguments) starts a run,
+`STOP` ends it. The chat is stopped; the script ended at 13:22Z.
 
 `runs/<id>/report.md` carries the wall clock, the tool histogram, the cost
 breakdown and every policy refusal. Read the refusals: a refusal that recurs is
@@ -110,16 +118,16 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: RUNNING in `northeurope`** since 11 October 10:48 UTC (`apply` run 38132575864), unless the
-  session's last line says it was destroyed. About $17-20 a month, mostly Postgres. A dev-only exception to D-13:
+- **Infrastructure: RUNNING in `northeurope`** since 11 October 10:48 UTC, updated 13:19 UTC (`apply` run 38142597298),
+  kept up by decision on 11 October. About $17-20 a month, mostly Postgres. A dev-only exception to D-13:
   `swedencentral` had no Burstable Postgres capacity (finding 30, OQ-25).
   URL: `https://ca-demo-dev.salmonpond-00eb6e14.northeurope.azurecontainerapps.io`
-- `deployments/dev/demo/` pins `app-stack` **v0.4.0** (`module_version = "0.4.0"`) and image `d627b35`, the current
-  `aaas-app-demo/master`. **`applied.json`** records what the estate runs: `app-stack@0.4.0`, `d627b35`, migration
-  `20261010133821_AddProjects`.
+- `deployments/dev/demo/` pins `app-stack` **v0.4.0** (`module_version = "0.4.0"`) and image `1b50207`, the current
+  `aaas-app-demo/master`. **`applied.json`** records what the estate runs: `app-stack@0.4.0`, `1b50207`, migration
+  `20261010133821_AddProjects`. One test item ("Buy paint") exists in the demo.
 - `aaas-deployments` `master` has `-lock-timeout=10m` on plan and apply (`5378c12`, finding 25)
-- **`aaas-app-demo` `master` is `d627b35`**: `/items/summary`, projects, the calendar (#22, merged by the harness), the
-  change records, conventions, `requests/` and "immutable once applied". Pending requests: `item-tags`, `item-upcoming`.
+- **`aaas-app-demo` `master` is `1b50207`**: `/items/summary`, projects, the calendar (#22) and item editing (#25, `PUT /items/{id}`),
+  both merged by the harness, the change records, conventions, `requests/` and "immutable once applied". Pending requests: `item-tags`, `item-upcoming`.
 - **`release.yml` opens a deployment PR for every app merge.** On a running stack that is an update; on a destroyed
   one it is a create. Check which before merging.
 - **`aaas-app-demo` open PRs from 4 October:** #14, #15, #16 predate the change record; #6 (`feat/notebook`) never merge.
@@ -128,7 +136,7 @@ trusting the wrong layer.
   strict, no force-push or deletion (created 26 September)
 - `aaas-app-template`: ruleset and repo settings now agree on squash (fixed 28 September)
 - GHCR package `aaas-app-demo` is public, so `registry_username` is `""`
-- Module tags: `v0.3.1` (Postgres children serialised - not the fix), **`v0.3.2`** (Container App waits for the database - proven on create, finding 25). Pinned: v0.3.2
+- Module tags: `v0.3.1` (Postgres children serialised - not the fix), `v0.3.2` (Container App waits for the database - proven on create, finding 25), **`v0.4.0`** (version and archetype tags, finding 30). Pinned: v0.4.0
 - Three tokens in the `aaas` folder: `.claude-oauth-token-dont-delete` (the harness's Claude login), `.github_PAT_dont_delete` (operator, all repos, no Workflows, no
   Actions write) and `.aaas-agent-PAT-dont-delete` (agent: `aaas-deployments` + `aaas-app-demo`
   only; refused on `aaas-agent` and `aaas-docs`)
@@ -141,8 +149,13 @@ trusting the wrong layer.
 - **A green `destroy` does not free the resource group's name** (finding 30). Wait about 10 minutes before
   re-creating the same deployment, or the old deletion takes the new resources with it.
 - **To re-run `apply` without Actions permission**, merge any change under the deployment directory.
-- **A harness merge looks like yours on GitHub** (`main0034`, the agent token's owner). Until the harness comments
-  on the PR, tell them apart by the run record: `runs/<id>/report.md` ends "auto-merged by the harness".
+- **A harness merge looks like yours on GitHub** (`main0034`, the agent token's owner) - since D-29 on deployment PRs
+  too (#36). Until the harness comments on the PR, tell them apart by the run record: `runs/<id>/report.md` ends
+  "auto-merged by the harness", and a conversation's `runs/<id>/converse.md` lists the deployment PR it merged.
+- **The chat's harness merges a deployment PR only after it merged the change itself**, and only an image-only one
+  with `gate` green. A change with a migration or a dependency stops at the app PR, for a human.
+- **A file copied to the outputs directory and committed to the Mac in the same minute can arrive stale** (finding
+  31). Check the content on the device before `git commit`.
 - **The plan's 5-hour limit ends runs mid-way and keeps nothing** (finding 22, again on 10 October). Queue long
   measurements early in a window.
 - **Requests use `requests/TEMPLATE.md`**: Rules and Interface are what both agents are held to; Open questions are

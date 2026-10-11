@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
-**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows · green measured against hidden tests: right 2 of 3 · a spec-tester that never sees the code caught the miss · every change carries its request and hidden acceptance tests in the app repo, enforced by CI · the harness merged its first change without a human · every estate says what it runs  
-**Owner:** Martin Ingeson · **Last updated:** 2026-10-11 (v0.20)
+**Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows · green measured against hidden tests: right 2 of 3 · a spec-tester that never sees the code caught the miss · every change carries its request and hidden acceptance tests in the app repo, enforced by CI · the harness merged its first change without a human · every estate says what it runs · a plain-words conversation became a live change, with no human merge  
+**Owner:** Martin Ingeson · **Last updated:** 2026-10-11 (v0.21)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -82,7 +82,15 @@ archetype (`app-stack` v0.4.0). After each green deploy the pipeline records the
 in `aaas-deployments`. App CI reads that record, so migrations are immutable once *applied* (OQ-21). The dev demo
 now runs in `northeurope`: `swedencentral` had no Burstable Postgres capacity on 10-11 October (OQ-25).
 
-**Not proven.** A new application from nothing (repo provisioning, OQ-15).
+**Proven on 2026-10-11, afternoon (finding 31, D-29).** The conversation plane, thinly. A local chat page in the harness
+container: an intake role interviewed Martin, playing the §2 user, and wrote a complete request in four exchanges
+($0.93). On "Go ahead", the change record ran with two spec-testers. The builder went red on a real defect (length
+checked before trimming); both spec-testers caught it, and one fix round corrected it. The harness then merged the
+app PR and its image-only deployment PR, and the user got a plain-words answer once `applied.json` named the new
+image. **Go ahead → live 25m 50s, $3.70 in all.** The answer told the user to "open an item", but the app has
+no screens: the golden path deploys a backend only (OQ-26).
+
+**Not proven.** A new application from nothing (repo provisioning, OQ-15). A user interface (OQ-26).
 
 **This document drifted from the build.** The POC documents do not reference it, which is how
 five weeks of Azure-specific work happened while §9 still said "spike Scaleway first". §9 is now
@@ -425,6 +433,7 @@ loop. See OQ-4 and OQ-5 — this is the topic for the next session.
 | D-26 | **The harness may merge a change without a human when two independent spec-testers' tests pass and the change adds no migration, no dependency and nothing outside `src/`, `tests/` and its own record** (`change.merge_blockers`, `--auto-merge`) | 2026-10-10 | Resolves OQ-5 for one class. A pair caught 95% of planted bugs and both real defects with 0 false reds, against 90% for one run; the builder cannot touch the tests (policy, CI, byte check). A migration stays gated (OQ-7), and so does a dependency, because nothing reviews one. The check is deterministic code (D-17), not a model's judgement. Accepted risk: a rule every spec-tester run tests at one point only (finding 29) |
 | D-27 | **Coding conventions live in the app's AGENT.md "Conventions", each with a CI check; requests live in the app's `requests/`, written from `requests/TEMPLATE.md`** | 2026-10-10 | Lower-level instructions belong with the app they govern, and a convention without a check is a request the agent can skip (D-17). First two: CSharpier, and Arrange/Act/Assert tests. Requests in the repo make `aaas-agent` application-free and give the requester one structure (rules, interface, examples) that both agents read |
 | D-28 | **Each estate is described twice: module version and archetype as tags on every resource, and what it actually runs (image, module, applied migration) in `aaas-deployments/<deployment>/applied.json`, written by the pipeline after a green readiness gate. Migrations are immutable once applied, read from that record** | 2026-10-11 | Resolves OQ-16 and OQ-21. Tags answer "what does each estate run" from Azure alone; the record is the observed state, kept in git where app CI can read it without a token. The version is pinned twice in a deployment (`?ref=` and `module_version`) and a plan-time precondition makes a mislabelled release impossible to apply. The record job has `contents: write`, the apply job does not |
+| D-29 | **The conversation plane: an intake role writes the request, deterministic code decides it is complete, and the harness ships it.** Intake can read the app and write one file, with no shell, token or git network. "Go ahead" appears only when `intake.check_request` passes (title, What and why, Rules, a route under Interface, no template left). After a change it merged itself (D-26), the harness also merges that change's deployment PR, but only when the PR changes exactly `container_image` and `gate` is green. It reports "live" only when `applied.json` names the new image. The user's answer is written by a session with no tools, from a list of facts | 2026-10-11 | Narrows OQ-4 and OQ-22. One run (finding 31): a plain-words request became a deployed change in 25m 50s, $3.70, with no human merge. The models write text and code; none of them decides whether to ship. The image-only rule extends D-26 to its own consequence: no new kind of change reaches Azure without a human, because a migration or dependency stops at D-26. Runs locally in the harness container on `127.0.0.1`; hosting it is still OQ-4 |
 | D-19 | **This is a build-to-learn exercise, not a business in formation** | 2026-09-20 | Stated preference: play with the technology rather than settle the commercial model. The commercial and go-to-market open questions are parked rather than deleted, so the build proceeds without them blocking and the thinking is not lost. Revisit when there is something worth selling |
 
 ---
@@ -470,9 +479,9 @@ commercial and start being legal.
   and D-13 has to be revisited — which is a rebuild, not a preference. Still the cheapest
   unanswered question on this list: ten conversations, no engineering. Still unanswered.
 - **OQ-4 — Agent hosting and orchestration.** Narrowed by D-18: the runtime and tool boundary
-  are settled and run locally in a container. Still open: where this runs when it is not on a
-  laptop, how it is triggered by a non-technical user, and how session state and conversation
-  history are held between turns.
+  are settled and run locally in a container. Narrowed again by D-29: a non-technical user triggers it from a
+  chat page, and one conversation's state lives in that container's memory. Still open: where this runs when it
+  is not on a laptop, more than one user or conversation at a time, and conversations that survive a restart.
 - **OQ-5 — Human-in-the-loop boundary.** Which changes deploy automatically and which need
   a human (customer or us). Likely: app-code changes auto, schema and infra changes gated.
   **Evidence against trusting green (2026-09-26):** the agent's first feature passed CI with a
@@ -536,7 +545,15 @@ commercial and start being legal.
   and pushed nothing. A subscription is a capacity ceiling as well as a licence problem.
   **28 September (finding 23):** one fix-forward round cost $0.38, the same as the push it fixed.
   A red check roughly doubles the agent cost of a change; that is the multiplier to price.
-- **OQ-22 — What a non-technical user is told when a deploy fails.** The pipeline half is done
+- **OQ-26 — The golden path has no user interface.** §1 promises "web frontend, simple backend, data storage";
+  the archetype deploys the backend only. On 11 October the §2 user was told a change was live that they had no
+  way to use, and the reporter filled the gap by inventing "open an item" (finding 31). Open: is the frontend part
+  of the archetype (same image, server-rendered pages the agent writes from the same request) or a second
+  deployable? Who writes the screens - the builder, from the same request? And what do the spec-testers test, if
+  the user's change is now a screen?
+- **OQ-22 — What a non-technical user is told when a deploy fails.** **2026-10-11 (D-29):** the answer is written
+  by a reporter with no tools, from facts the harness assembles, including the readiness gate's cause. Proven on the
+  success path only; a red deploy has not yet been reported through it. The pipeline half is done
   (D-22): the deployment PR carries the URL on success, and on failure the reason and the
   init container's own error line. Still open: the §2 persona reads neither a PR nor
   `23505: could not create unique index`. Someone has to translate "your two items called
@@ -592,8 +609,8 @@ serves; if the two disagree, one of them is wrong and gets fixed at session end.
 
 **Where the planes stand (§5).** Source of truth: done, for an app that already exists. Delivery:
 done and hardened (plan, apply, readiness gate D-22, clean create, destroy). Agent: the app-developer
-role works with fix-forward (D-23); intake, infra-as-a-role and operator do not exist and hosting is
-open (OQ-4). Conversation plane: nothing. Control plane: nothing, but no longer blocked: estates describe themselves (D-28).
+role works with fix-forward (D-23), spec-testers (D-25, D-26) and intake (D-29); infra-as-a-role and operator do
+not exist, and hosting is open (OQ-4). Conversation plane: one thin path, a local chat page (D-29). Control plane: nothing, but no longer blocked: estates describe themselves (D-28).
 
 **Everything since 23 September** closed one reason green did not mean works (D-22, Phase 4c, D-23,
 OQ-14, D-24). They are one question - can a merge happen without a human (OQ-5) - which is the hinge
@@ -606,7 +623,8 @@ of the product: the §2 user cannot review a PR.
 | 2b | ~~**Act on it.**~~ Done 2026-10-10 (finding 28, D-25): the change record; hidden tests are part of the required check. No auto-merge: one spec-tester run in three missed a known defect | OQ-5, OQ-23 | ✓ (reason recorded) |
 | 2c | ~~**Two spec-testers per change**~~ Done 2026-10-10 (finding 29, D-26): pair 95% vs single 90%; #22 merged by the harness | OQ-5 | ✓ |
 | 4 | ~~**Version visibility**~~ Done 2026-10-11 (finding 30, D-28): tags on every resource, `applied.json` per estate, immutable once applied | OQ-16, OQ-21 | ✓ |
-| 5 | **The first missing plane** - intake + conversation (OQ-4, OQ-22) or control plane (OQ-8). Chosen by interest when step 4 is done (D-19) | §5 | One end-to-end path through that plane, however thin |
+| 5 | ~~**The first missing plane**~~ Done 2026-10-11 (finding 31, D-29): intake + conversation, chosen over the control plane. A plain-words request became a live change, 25m 50s, no human merge | OQ-4, OQ-22 | ✓ |
+| 5b | **Proposed 2026-10-11, decided at the start of the next session: a screen for the user** - the archetype gets a frontend the agent writes from the same request, so a live change is one the §2 user can use | OQ-26 | A change asked for in the chat shows up as something the user can click |
 | 6 | **A new app from nothing** (moved after 5 on 2026-10-10, by choice: the change loop matters more than onboarding while there is one app) - repo, ruleset, identity, federated credentials, deployment directory, verified after creation | OQ-15 | One command or workflow takes a name to a running empty app, and asserts its identity before the first deploy |
 
 Off the path, picked up only if they block a step: the `workload_profile_name` diff, a ruleset on
