@@ -1,6 +1,6 @@
 # AaaS — where things stand
 
-Written 11 October 2026, afternoon, at the end of roadmap step 5. **A plain-words conversation became a live change with no human merge** (finding 31): `./run.sh --task converse` serves a chat page; intake writes the request, `create-change` builds and auto-merges it, the harness merges its image-only deployment PR and answers the user in plain words once `applied.json` names the new image. The app has no screens, so the user cannot yet use what they asked for (OQ-26). Before that, step 4 (11 October, morning): every resource is tagged with its module version and archetype, and each estate records what it applied (finding 30). Before that, step 2c (10 October, evening): A change starts as `requests/<name>.md` in the app repo; two spec-testers write hidden acceptance tests, a builder writes the code, and for a change with no migration or dependency the harness merges it without a human - done once, #22 (finding 29). Coding conventions (CSharpier, Arrange/Act/Assert) are in each app's AGENT.md with CI checks. The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
+Written 11 October 2026, evening, at the end of roadmap step 5b. **A change asked for in the chat shows up as a screen the user can click** (finding 32, D-30): the app renders Blazor pages on the server, in the same image, that reach data only through the app's own routes; the builder writes the page with the change, and the harness tells the user where it is from the pages the diff changed, checked on the live app. A screen-only change is not yet tested independently: the spec-testers test routes, so the first one went live with a screen rule broken, since fixed by hand (OQ-27). Before that, step 5 (11 October, afternoon): **A plain-words conversation became a live change with no human merge** (finding 31): `./run.sh --task converse` serves a chat page; intake writes the request, `create-change` builds and auto-merges it, the harness merges its image-only deployment PR and answers the user in plain words once `applied.json` names the new image. The app has no screens, so the user cannot yet use what they asked for (OQ-26). Before that, step 4 (11 October, morning): every resource is tagged with its module version and archetype, and each estate records what it applied (finding 30). Before that, step 2c (10 October, evening): A change starts as `requests/<name>.md` in the app repo; two spec-testers write hidden acceptance tests, a builder writes the code, and for a change with no migration or dependency the harness merges it without a human - done once, #22 (finding 29). Coding conventions (CSharpier, Arrange/Act/Assert) are in each app's AGENT.md with CI checks. The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -55,14 +55,20 @@ Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, 
 - **The conversation plane, thinly** (11 October, afternoon, finding 31, D-29): `--task converse` (`aaas-agent` #8, #9; runbook `aaas-deployments/agent/intake.md`). Martin as the §2 user: intake 4 exchanges, 10m 28s, $0.93, request complete first time. Go ahead → live **25m 50s**: two spec-testers (13m, serial), builder red on length-before-trim, both spec-testers caught it, one fix round, harness merged app PR #25 and deployment PR #36, `applied.json` → `1b50207`. $3.70 in all. `PUT /items/{id}` verified on the live app
 - **Conventions and requests** (10 October, evening, D-27): AGENT.md "Conventions" with CI checks - CSharpier 1.3.0 and `scripts/check-test-layout.py` (app-demo #20, template #5). `requests/TEMPLATE.md` and `--change <name>` (app-demo #21, template #6, `aaas-agent` #7). `aaas-agent` holds nothing app-specific; the old briefs, hidden tests and scorer are in `aaas-docs/evidence/`
 
+- **Screens** (11 October, evening, finding 32, D-30): template #8-#10, demo #26-#29, `aaas-agent` #10, runbooks `aaas-deployments` #37.
+  Blazor static SSR, `AppApi` (pages call routes over loopback, never the database), `PageTest`, `scripts/check-pages.py` in CI,
+  AGENT.md "Screens", a *Screen* section in requests; `harness/screens.py` finds the changed pages, checks them live, and gives the
+  reporter "where". Run `20261011T144330Z`: Martin asked for the item list as a table; intake $1.02, **Go ahead → live 20m 09s,
+  $1.91**, green first push, harness merged #28 and deployment #40, answer "on the start page" - truthful. A screen rule
+  (empty note → "—") was broken and nobody independent tested it; fixed in demo #29 / template #10
+
 ## Not started
 
 - **A new app from nothing** — new repo + first deployment + first app PR. Blocked on repo provisioning (OQ-15), deliberately out of scope so far
 
 ## Next step
 
-Per `NEXT-SESSION.md`: decide between **step 5b, a screen for the user** (OQ-26, proposed 11 October) and **step 6, a
-new app from nothing** (OQ-15), then do one of them. The chat runs with:
+Per `NEXT-SESSION.md`: **step 5c, spec-testers test screens** (OQ-27), or step 6 if Martin chooses it. The chat runs with:
 
 ```bash
 ./run.sh --task converse --app-repo aaas-app-demo      # then http://localhost:8765
@@ -94,7 +100,7 @@ From a linked cloud session, Claude cannot type into Terminal (click-only) and t
 shell has no Docker: the run goes in a script Martin starts once, logged through `script(1)`
 (finding 21). `session-1011.command` in the `aaas` folder is the current one: double-clicked, it starts the chat and
 opens the page; `session-1011-logs/STOPRUN` stops the chat, `RERUN` (one line of `run.sh` arguments) starts a run,
-`STOP` ends it. The chat is stopped; the script ended at 13:22Z.
+`STOP` ends it. On 11 October, evening, Martin started the chat from his terminal (`./run.sh --task converse --app-repo aaas-app-demo`); Ctrl-C stops it.
 
 `runs/<id>/report.md` carries the wall clock, the tool histogram, the cost
 breakdown and every policy refusal. Read the refusals: a refusal that recurs is
@@ -118,15 +124,16 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: RUNNING in `northeurope`** since 11 October 10:48 UTC, updated 13:19 UTC (`apply` run 38142597298),
+- **Infrastructure: RUNNING in `northeurope`** since 11 October 10:48 UTC, last updated 15:20 UTC (image `d3ab5df`),
   kept up by decision on 11 October. About $17-20 a month, mostly Postgres. A dev-only exception to D-13:
   `swedencentral` had no Burstable Postgres capacity (finding 30, OQ-25).
   URL: `https://ca-demo-dev.salmonpond-00eb6e14.northeurope.azurecontainerapps.io`
-- `deployments/dev/demo/` pins `app-stack` **v0.4.0** (`module_version = "0.4.0"`) and image `1b50207`, the current
-  `aaas-app-demo/master`. **`applied.json`** records what the estate runs: `app-stack@0.4.0`, `1b50207`, migration
-  `20261010133821_AddProjects`. One test item ("Buy paint") exists in the demo.
+- `deployments/dev/demo/` pins `app-stack` **v0.4.0** (`module_version = "0.4.0"`) and image `d3ab5df`, the current
+  `aaas-app-demo/master`. **`applied.json`** records what the estate runs: `app-stack@0.4.0`, `d3ab5df`, migration
+  `20261010133821_AddProjects`. Three test items exist in the demo ("Buy paint", "Empty note probe" with a stored `""`
+  note, "Second probe"); there is no delete route. Screens: `/` and `/app/items/{id}`.
 - `aaas-deployments` `master` has `-lock-timeout=10m` on plan and apply (`5378c12`, finding 25)
-- **`aaas-app-demo` `master` is `1b50207`**: `/items/summary`, projects, the calendar (#22) and item editing (#25, `PUT /items/{id}`),
+- **`aaas-app-demo` `master` is `d3ab5df`**: screens (#26, #28 the table, #29), the CI step for `check-pages.py` (#27), `/items/summary`, projects, the calendar (#22) and item editing (#25, `PUT /items/{id}`),
   both merged by the harness, the change records, conventions, `requests/` and "immutable once applied". Pending requests: `item-tags`, `item-upcoming`.
 - **`release.yml` opens a deployment PR for every app merge.** On a running stack that is an update; on a destroyed
   one it is a create. Check which before merging.
