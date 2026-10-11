@@ -1271,6 +1271,77 @@ merge. The harness should say on the PR that it merged and why. Carried over.
   wrong question. Waiting for the deletion to finish belongs in `destroy.yml`, and a create should refuse to
   start into a resource group that is still being deleted. Both are workflow changes; carried over.
 
+## 31. A conversation became a live change: intake, the harness's two merges, and an answer in plain words
+
+11 October 2026, afternoon. Roadmap step 5, candidate A (OQ-4, OQ-22). `aaas-agent` #8 and #9, `aaas-deployments`
+`agent/intake.md`. Run `20261011T124340Z`.
+
+**What was built.** `./run.sh --task converse --app-repo aaas-app-demo` serves a chat page from inside the harness
+container, published on `127.0.0.1:8765` only. One conversation, four roles:
+- **Intake** (`agent/intake.md`). A multi-turn session over an isolated checkout of the app.
+  - It has Read, Glob, Grep, and Write/Edit into one directory. There is no shell, no token and no git network.
+  - It reads the app and every earlier `changes/*/brief.md`, interviews the user in plain words, decides the
+    Interface itself, and writes `requests/TEMPLATE.md`'s shape.
+- **The Go ahead check.** `intake.check_request` is a deterministic completeness check: a title, What and why,
+  Rules with a bullet, a route under Interface, and nothing left from the template. Go ahead appears only when it
+  passes. An incomplete file goes back to the agent, not the user.
+- **The change.** `create-change` runs on that text: 2 spec-testers, 2 fix rounds, `--auto-merge` (D-26).
+- **Delivery** (`harness/deliver.py`). It finds the deployment PR `release.yml` opened for the merge commit and
+  waits for `gate`. It merges only if the PR changes exactly `container_image` in that deployment's tfvars, then
+  waits for `applied.json` to name the new image. A "Deploy failed" comment ends the wait with its cause.
+- **The reporter.** A session with **no tools at all** writes the user's answer from a list of facts
+  (`facts-<n>.md`).
+
+**The run.** Martin played the §2 user.
+- **Intake: four exchanges, 10m 28s wall, $0.93.** It offered three things that "store nothing new". Martin chose
+  editing an item. It asked whether a note and priority can be cleared, then wrote `item-edit.md`. The file passed
+  the completeness check on the first try (0 corrections). Its title and note limits (200, 2000) came from the
+  existing model, not from invention. It told Martin up front that this one would go live without review.
+- **Go ahead → live: 25m 50s.**
+
+| Stage | Time | Cost |
+|---|---|---|
+| Spec-tester A, then B (serial) | 6m 16s + 7m 02s | $0.80 + $0.87 |
+| Builder → PR #25 | 3m 32s | $0.66 |
+| CI red (73s), fix round, CI green (73s) | 4m 03s | $0.42 |
+| Harness merges #25 → deployment PR #36 opened | 54s | - |
+| `gate` green, harness merges #36 | 71s | - |
+| Apply, readiness gate, `applied.json` names `1b50207` | 2m 14s | - |
+| Reporter | 4s | $0.02 |
+
+  Total **$3.70**: intake $0.93, change $2.75, answer $0.02. Half the wait is the two spec-testers.
+- **The red was a real defect, and both spec-testers caught it.** The builder checked the title's length before
+  trimming. That is the same class as #16 (finding 26). It failed A's `Title_valid_only_after_trimming_is_accepted`
+  and B's 200-characters-after-trimming test. One fix round corrected the code, and the tests were byte-identical
+  afterwards.
+- **Checked against the live app.** `PUT /items/1` with `"  Buy paint  "` stored `Buy paint`. A blank title gave
+  `400`. A title-only edit cleared the note and the priority, as the request said. One test item now exists in
+  the demo.
+
+**What it says.**
+- **The §2 user can now cause a deployed change without seeing git, a PR or a check.** Every gate between the
+  conversation and Azure was deterministic: request completeness, the merge class (D-26) and image-only (new).
+  The models wrote text and code; none of them decided to ship.
+- **Intake is cheap; acceptance is not.** Intake cost a quarter of the change. The spec-testers are 61% of the
+  change's cost and over half its wall clock, and they run one after the other. Running them in parallel would
+  cut about 6 minutes.
+- **The reporter invented a screen.** The answer said "just open an item and update whichever of those fields you
+  need". The app has no screens, only routes. The facts never mentioned a UI, and the reporter filled the gap
+  with what an app usually has.
+  - `intake.md` now forbids describing how the change is used unless the facts say so.
+  - The real finding is underneath: **the golden path has no user interface**. §1 promises "web frontend, simple
+    backend, data storage". What we deploy is the backend. The §2 user was told a change is live that they have
+    no way to use. New OQ-26.
+- **The harness merged twice under the agent token's owner.** #25 and #36 both show `main0034` on GitHub.
+  Carried over: the harness should say on each PR that it merged it.
+- **Two recording gaps, one fixed.**
+  - The intake transcript held only the agent's side, because the SDK stream does not echo the user. Fixed in
+    #9.
+  - The page showed the Go ahead box all the time. `display: flex` beats `hidden`. Clicking early did nothing,
+    since the server checks readiness itself, but it looked wrong. Fixed in #8.
+- **One mechanical trap.** A file copied into the outputs directory and committed to the Mac in the same minute
+  arrived stale once. Check the content on the device before committing.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.
