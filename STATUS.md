@@ -68,7 +68,8 @@ Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, 
 
 ## Next step
 
-Per `NEXT-SESSION.md`: **step 5c, spec-testers test screens** (OQ-27), or step 6 if Martin chooses it. The chat runs with:
+Per `NEXT-SESSION.md`: **step 5a, a local workbench** - request, build, preview locally, iterate on the request, then ship -
+chosen by Martin on 11 October ahead of 5c (spec-testers test screens) and 6 (a new app from nothing). The chat runs with:
 
 ```bash
 ./run.sh --task converse --app-repo aaas-app-demo      # then http://localhost:8765
@@ -124,10 +125,9 @@ trusting the wrong layer.
 
 ## Current state of the environment
 
-- **Infrastructure: RUNNING in `northeurope`** since 11 October 10:48 UTC, last updated 15:20 UTC (image `d3ab5df`),
-  kept up by decision on 11 October. About $17-20 a month, mostly Postgres. A dev-only exception to D-13:
-  `swedencentral` had no Burstable Postgres capacity (finding 30, OQ-25).
-  URL: `https://ca-demo-dev.salmonpond-00eb6e14.northeurope.azurecontainerapps.io`
+- **Infrastructure: DESTROYED.** `destroy` run 38151400239 succeeded on 11 October at 15:28 UTC, after the screens were
+  proven, and the app hostname no longer resolves. Nothing is costing money. The next create goes to `northeurope`
+  (OQ-25) and takes about 22 minutes; the next `release.yml` deployment PR on a destroyed stack is a create.
 - `deployments/dev/demo/` pins `app-stack` **v0.4.0** (`module_version = "0.4.0"`) and image `d3ab5df`, the current
   `aaas-app-demo/master`. **`applied.json`** records what the estate runs: `app-stack@0.4.0`, `d3ab5df`, migration
   `20261010133821_AddProjects`. Three test items exist in the demo ("Buy paint", "Empty note probe" with a stored `""`
