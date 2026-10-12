@@ -1,7 +1,7 @@
 # AaaS — Application as a Service
 
 **Status:** v1 platform decided · POC pipeline working · agent writes infrastructure *and* application PRs · prompt → running change in ~8 minutes · deploys gated on the app actually running · agent fixes its own failed checks · full chain run from a destroyed stack · clean create proven · green means routes returned the right rows · green measured against hidden tests: right 2 of 3 · a spec-tester that never sees the code caught the miss · every change carries its request and hidden acceptance tests in the app repo, enforced by CI · the harness merged its first change without a human · every estate says what it runs · a plain-words conversation became a live change, with no human merge · the change shows up as a screen the user can click  
-**Owner:** Martin Ingeson · **Last updated:** 2026-10-11 (v0.22)
+**Owner:** Martin Ingeson · **Last updated:** 2026-10-12 (v0.23)
 
 This is the living context document for the AaaS product. It is updated across
 conversations. Decisions move from *Open Questions* to *Decisions* as they are settled.
@@ -638,6 +638,7 @@ of the product: the §2 user cannot review a PR.
 | 4 | ~~**Version visibility**~~ Done 2026-10-11 (finding 30, D-28): tags on every resource, `applied.json` per estate, immutable once applied | OQ-16, OQ-21 | ✓ |
 | 5 | ~~**The first missing plane**~~ Done 2026-10-11 (finding 31, D-29): intake + conversation, chosen over the control plane. A plain-words request became a live change, 25m 50s, no human merge | OQ-4, OQ-22 | ✓ |
 | 5b | ~~**A screen for the user**~~ Done 2026-10-11 (finding 32, D-30): Blazor static SSR through the routes; a chat request became a clickable change in 20m 09s, and the answer named the page | OQ-26 | ✓ |
+| 5a | **A local workbench** (chosen 2026-10-11, ahead of 5c): request → build on a branch → preview on Martin's Mac against a local Postgres → edit the request and rebuild → ship. Spec-testers run once, at ship time, from the final request. Rider run configurations, no plugin. Martin, as operator, is the interim screen check (OQ-27) | OQ-27, OQ-23 | Martin asks for a change, clicks through it locally, changes the request once, sees the rebuild, ships it, and the spec-testers' tests run in CI |
 | 5c | **Spec-testers test screens** - the *Screen* section gets hidden acceptance tests through the page, as the *Interface* does through the routes, so a UI change is not graded by its builder | OQ-27 | A planted screen defect (the 11 October empty note among them) goes red on a spec-tester's test, and a screen-only change is merged on independent tests |
 | 6 | **A new app from nothing** (moved after 5 on 2026-10-10, by choice: the change loop matters more than onboarding while there is one app) - repo, ruleset, identity, federated credentials, deployment directory, verified after creation | OQ-15 | One command or workflow takes a name to a running empty app, and asserts its identity before the first deploy |
 
