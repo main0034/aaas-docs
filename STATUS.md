@@ -1,6 +1,14 @@
 # AaaS — where things stand
 
-Written 11 October 2026, evening, at the end of roadmap step 5b. **A change asked for in the chat shows up as a screen the user can click** (finding 32, D-30): the app renders Blazor pages on the server, in the same image, that reach data only through the app's own routes; the builder writes the page with the change, and the harness tells the user where it is from the pages the diff changed, checked on the live app. A screen-only change is not yet tested independently: the spec-testers test routes, so the first one went live with a screen rule broken, since fixed by hand (OQ-27). Before that, step 5 (11 October, afternoon): **A plain-words conversation became a live change with no human merge** (finding 31): `./run.sh --task converse` serves a chat page; intake writes the request, `create-change` builds and auto-merges it, the harness merges its image-only deployment PR and answers the user in plain words once `applied.json` names the new image. The app has no screens, so the user cannot yet use what they asked for (OQ-26). Before that, step 4 (11 October, morning): every resource is tagged with its module version and archetype, and each estate records what it applied (finding 30). Before that, step 2c (10 October, evening): A change starts as `requests/<name>.md` in the app repo; two spec-testers write hidden acceptance tests, a builder writes the code, and for a change with no migration or dependency the harness merges it without a human - done once, #22 (finding 29). Coding conventions (CSharpier, Arrange/Act/Assert) are in each app's AGENT.md with CI checks. The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
+Written 14 October 2026, at the end of roadmap step 5a. **AaaS is paused.** Martin started a new track in its own Project: an AI developer setup, built against a real application. It keeps these methods and none of this machinery. When AaaS resumes, it starts at step 5c. Step 5a, **a local workbench, is built and verified in parts but was never run for a real change** (finding 33, D-31):
+- `workbench.sh build` builds a request on a branch with no PR;
+- `scripts/preview.sh` runs the real image locally;
+- `rebuild` follows an edited request;
+- `ship` runs the spec-testers and opens a PR that Martin merges.
+
+Its first real use stopped before a build: Martin wanted help writing the request in a conversation, not a file and commands (OQ-28).
+
+Before that, 11 October, evening, step 5b: **A change asked for in the chat shows up as a screen the user can click** (finding 32, D-30): the app renders Blazor pages on the server, in the same image, that reach data only through the app's own routes; the builder writes the page with the change, and the harness tells the user where it is from the pages the diff changed, checked on the live app. A screen-only change is not yet tested independently: the spec-testers test routes, so the first one went live with a screen rule broken, since fixed by hand (OQ-27). Before that, step 5 (11 October, afternoon): **A plain-words conversation became a live change with no human merge** (finding 31): `./run.sh --task converse` serves a chat page; intake writes the request, `create-change` builds and auto-merges it, the harness merges its image-only deployment PR and answers the user in plain words once `applied.json` names the new image. The app has no screens, so the user cannot yet use what they asked for (OQ-26). Before that, step 4 (11 October, morning): every resource is tagged with its module version and archetype, and each estate records what it applied (finding 30). Before that, step 2c (10 October, evening): A change starts as `requests/<name>.md` in the app repo; two spec-testers write hidden acceptance tests, a builder writes the code, and for a change with no migration or dependency the harness merges it without a human - done once, #22 (finding 29). Coding conventions (CSharpier, Arrange/Act/Assert) are in each app's AGENT.md with CI checks. The product-level plan is `AaaS-context.md` §9, an ordered roadmap. Start here in a new conversation.
 
 ## Read these, in this order
 
@@ -62,14 +70,33 @@ Verified working on 1 October: `/ready` → `database: ok`, `managed-identity`, 
   $1.91**, green first push, harness merged #28 and deployment #40, answer "on the start page" - truthful. A screen rule
   (empty note → "—") was broken and nobody independent tested it; fixed in demo #29 / template #10
 
+- **The local workbench** (12 October, finding 33, D-31): `aaas-agent` #11-#13, template #11-#12, demo #30-#31.
+  - Tasks `build`, `rebuild` and `ship`, plus `workbench.sh check|build|rebuild|ship`.
+  - `preview.yml` / `scripts/preview.sh` / `scripts/preview-seed.sh`, the Rider `.run/` configurations 0-4, and the
+    `App (preview database)` launch profile.
+  - Verified with stand-in sessions (205 harness tests, including build → rebuild → ship end to end) and a preview in a
+    container (demo: 243 tests). **Not yet used for a real change.**
+
 ## Not started
 
 - **A new app from nothing** — new repo + first deployment + first app PR. Blocked on repo provisioning (OQ-15), deliberately out of scope so far
 
 ## Next step
 
-Per `NEXT-SESSION.md`: **step 5a, a local workbench** - request, build, preview locally, iterate on the request, then ship -
-chosen by Martin on 11 October ahead of 5c (spec-testers test screens) and 6 (a new app from nothing). The chat runs with:
+**AaaS is paused (14 October).** When it resumes, per `NEXT-SESSION.md`: **step 5c, spec-testers test screens** (OQ-27).
+Before that, a real workbench loop would be cheap to run (OQ-28), but it is not the next topic.
+
+The workbench, from the app checkout (Rider: *Workbench* run configurations 0-4):
+
+```bash
+../aaas-agent/workbench.sh check <name>     # requests/<name>.md complete? no agent, no network
+../aaas-agent/workbench.sh build <name>     # commits + pushes the request, builds on change/<date>-<name>
+scripts/preview.sh                          # the real image on http://localhost:8080
+../aaas-agent/workbench.sh rebuild          # after editing the request on the branch
+../aaas-agent/workbench.sh ship [--merge]   # spec-testers, change record, PR (waits for you unless --merge)
+```
+
+The chat for the §2 user runs with:
 
 ```bash
 ./run.sh --task converse --app-repo aaas-app-demo      # then http://localhost:8765
@@ -126,14 +153,14 @@ trusting the wrong layer.
 ## Current state of the environment
 
 - **Infrastructure: DESTROYED.** `destroy` run 38151400239 succeeded on 11 October at 15:28 UTC, after the screens were
-  proven, and the app hostname no longer resolves. Nothing is costing money. The next create goes to `northeurope`
+  proven, and the app hostname no longer resolves (checked 12 October: no apply since). Nothing is costing money. The next create goes to `northeurope`
   (OQ-25) and takes about 22 minutes; the next `release.yml` deployment PR on a destroyed stack is a create.
 - `deployments/dev/demo/` pins `app-stack` **v0.4.0** (`module_version = "0.4.0"`) and image `d3ab5df`, the current
   `aaas-app-demo/master`. **`applied.json`** records what the estate runs: `app-stack@0.4.0`, `d3ab5df`, migration
   `20261010133821_AddProjects`. Three test items exist in the demo ("Buy paint", "Empty note probe" with a stored `""`
   note, "Second probe"); there is no delete route. Screens: `/` and `/app/items/{id}`.
 - `aaas-deployments` `master` has `-lock-timeout=10m` on plan and apply (`5378c12`, finding 25)
-- **`aaas-app-demo` `master` is `d3ab5df`**: screens (#26, #28 the table, #29), the CI step for `check-pages.py` (#27), `/items/summary`, projects, the calendar (#22) and item editing (#25, `PUT /items/{id}`),
+- **`aaas-app-demo` `master` has the workbench (#30, #31) on top of `d3ab5df`.** The deployment still pins image `d3ab5df`: the deployment PRs those merges opened (#42, #43) were closed, since they changed nothing the app does and the stack is destroyed. `d3ab5df` has: screens (#26, #28 the table, #29), the CI step for `check-pages.py` (#27), `/items/summary`, projects, the calendar (#22) and item editing (#25, `PUT /items/{id}`),
   both merged by the harness, the change records, conventions, `requests/` and "immutable once applied". Pending requests: `item-tags`, `item-upcoming`.
 - **`release.yml` opens a deployment PR for every app merge.** On a running stack that is an update; on a destroyed
   one it is a create. Check which before merging.
@@ -152,6 +179,12 @@ trusting the wrong layer.
 - **No merged branches left** (checked 10 October). Branches on GitHub are the open PRs' only; `feat/notebook` is PR #6, never merge
 
 ## Things to remember
+
+- **The harness only sees GitHub.** A request on your disk does not exist for it. Build with `workbench.sh` (or Rider's
+  *1 Build*), which pushes the request first; `run.sh --task build` does not (finding 33).
+- **Every merge to an app opens a deployment PR, and on a destroyed stack that PR is a create.** Close it if the change
+  is tooling only.
+- **CSharpier formats XML.** Anything Rider writes (`.run/`) belongs in `.csharpierignore`.
 
 - **A green `destroy` does not free the resource group's name** (finding 30). Wait about 10 minutes before
   re-creating the same deployment, or the old deletion takes the new resources with it.
