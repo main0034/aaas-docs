@@ -1450,6 +1450,83 @@ snippet of each note.
 - **The delivery half held up.** The diff, not the builder, decided where the change is. The live check took 3
   seconds, and the reporter said no more than the facts.
 
+## 33. The local workbench: built and verified in parts, never run for real, and the pause it led to
+
+12-14 October 2026. Roadmap step 5a. `aaas-agent` #11-#13, `aaas-app-template` #11-#12, `aaas-app-demo` #30-#31.
+
+**What was decided at the start (12 October).**
+- Martin agreed all four of NEXT-SESSION's decisions:
+  - spec-testers run once, at ship time;
+  - the request lives in `requests/<name>.md` on the change branch while iterating;
+  - the preview is the real image under Docker Compose;
+  - "Try it" in the chat only if cheap. It was not built.
+- Spec-testers at ship time amend D-25. Independence comes from isolation alone: they get `master` only, with no
+  remote, token or `gh`, so they are still blind to the branch. "Tests written before any code existed" becomes
+  "tests written by someone never shown the code" (D-31).
+
+**What was built.**
+- **Harness: `--task build`, `rebuild`, `ship`** (`harness/workbench.py`, `workbench_run.py`).
+  - Build and rebuild are one builder session on `change/<date>-<name>`, **offline**: no `gh`, no git network, and the
+    policy says why.
+  - The harness commits what the builder left, with `AaaS-Build` and `AaaS-Request: <blob>` trailers, and pushes.
+  - A rebuild gets the request now, a diff against the request of the last build, and the branch's diff stat. An
+    unchanged request is refused before any session starts.
+  - Ship refuses an incomplete request, and one edited after the last build. Then:
+    - two spec-testers on `master`;
+    - one harness commit moves the request into `changes/<id>/` with their tests;
+    - the harness, not the builder, opens the PR;
+    - the rest is `create-change`'s tail, now shared as `finish_change`.
+  - `run_spec_tester` was lifted out of `run_change` with no behaviour change. 205 tests pass, including build →
+    refused unchanged rebuild → refused early ship → rebuild → ship → merge end to end with fake sessions.
+- **`workbench.sh check|build|rebuild|ship`**, run from the app checkout.
+  - It commits and pushes the request with Martin's own git, runs `run.sh`, and pulls the branch back.
+  - `check` runs `intake.check_request` with the Mac's python3.
+  - Ship ends at a PR Martin merges; `ship --merge` opts into D-26 (option A, chosen 12 October).
+- **App repos.**
+  - `preview.yml` + `scripts/preview.sh`: the real image, `migrate` first, next to `postgres:16` on `localhost:8080`.
+    The app shares the database container's network, because `Database.cs` requires TLS for any host but
+    `localhost`.
+  - `scripts/preview-seed.sh` seeds through the routes. `.run/` holds Rider configurations 0-4. A launch profile
+    runs `dotnet run` against the preview's database.
+  - Verified in Claude's container: up, data kept on a second up, `fresh` reseeds, `/app/items/1` serves. The demo's
+    243 tests pass.
+
+**What cost time.**
+- **CSharpier formats XML.** The first CI run of #30 and template #11 was red on Rider's `.run/*.run.xml`. The fix
+  was `.run/` in `.csharpierignore`.
+- **`workbench.sh check` exited silently on Martin's Mac.** His clone has no `origin/HEAD`, so `git symbolic-ref`
+  failed under `pipefail` with no output and exit 128 (#13). An ERR trap now names the failing line. The test clone
+  had `origin/HEAD`; the real one did not.
+- **Every merge to the demo opens a deployment PR, and on a destroyed stack that PR is a create.** #42 and #43 were
+  closed by hand. Tooling-only app changes still go through `release.yml`.
+- **Claude's container** could not pull from Docker Hub (429; `mirror.gcr.io` worked), and an image build there
+  needs the proxy CA added. Neither applies on the Mac.
+- **No GitHub link in claude.ai.** Git push with the operator PAT worked from Claude's container; API calls went
+  through the Mac's shell. No bundles were needed this time.
+
+**The run that did not happen.** On 14 October Martin wrote a request himself ("soon-due items marked"), with
+deliberately ambiguous rules, and started a build:
+- with `run.sh` directly rather than `workbench.sh`;
+- with a typo in the change name;
+- and with the request only on his disk.
+
+The harness, which only sees GitHub, said "no request on master". He then stopped: writing the request alone and
+running commands was not the help he wanted. A chat about the request, working on his local branch, would have been.
+
+**What it says.**
+- **The operator is a third user.** He is neither the §2 user (the chat serves that user) nor a developer who wants
+  only AI help in the IDE. He wants help writing and sharpening the request, and then no involvement until he
+  verifies. The workbench gave him commands and a file to write. The missing part was the conversation, not the
+  build.
+- **A harness that only sees GitHub turns every local file into a push.** `workbench.sh` hides the push, but
+  `run.sh` does not, and the first real use went around it.
+- **Ambiguity the completeness check cannot see.** "Less than 5 work days" left open whether today counts, what
+  happens to overdue and done items, holidays, and which clock. Worse, a rule computed only on the page cannot be
+  tested by the spec-testers (OQ-27). The request needed a route field (`dueSoon`), and nothing told the author that.
+- **Martin paused AaaS here (14 October)** in favour of a new track in its own Project: an AI developer setup,
+  built against a real application. It carries this build's methods (spec-testers, the change record, a check
+  behind every convention) and none of its machinery.
+
 ## Open questions this run has NOT answered
 
 - ~~Whether the module actually works~~ — answered in finding 9: `/ready` confirmed the private DNS and delegated subnet path.

@@ -1,117 +1,107 @@
 # Next session
 
-Written 12 October 2026, from the prioritisation at the end of roadmap step 5b. Replaced wholesale at the end of every
-session - this file is intent, not history. What actually happened lives in `FINDINGS.md`, where things stand lives in
-`STATUS.md`, and the ordered plan is `AaaS-context.md` §9.
+Written 14 October 2026, when AaaS was paused. Replaced wholesale at the end of every session - this file is intent,
+not history. What actually happened lives in `FINDINGS.md`, where things stand lives in `STATUS.md`, and the ordered
+plan is `AaaS-context.md` §9.
+
+**AaaS is paused.** Martin is working on a new track in its own Project: an AI developer setup, built against a
+learning app. This file is for the day AaaS resumes. If you are in the new Project, you are in the wrong file.
 
 ---
 
 ## Topic
 
-**Roadmap step 5a: a local workbench.** Martin asks for a change, previews it on his Mac, edits the request until it
-is right, and only then ships it. Chosen by Martin on 11 October, ahead of 5c (spec-testers test screens) and 6 (a new
-app from nothing).
+**Roadmap step 5c: spec-testers test screens** (OQ-27). The *Screen* section of a request gets hidden acceptance
+tests through the page, the way *Interface* gets them through the routes, so a UI change is no longer graded by its
+own builder.
 
 One topic. If something else turns out to block it, say which and why before widening.
 
 ## Why this one
 
-Martin wants to use the harness himself, and three things are missing:
-- **Seeing the change before it ships.** Today the only way to see a change is to merge and deploy it, which takes
-  about 20 minutes on Azure. A local preview is seconds, and costs nothing while the demo is destroyed.
-- **Iterating on the requirement.** Today the request is frozen at "Go ahead". Martin wants to read it, change it, and
-  see the change follow.
-- **Rider.** The request is a file in the app repo, so Rider can edit it; running and previewing should be a click there.
-
-It is also the interim answer to OQ-27. On 11 October a screen rule went live broken, because nobody independent
-tested the screen (finding 32). With a preview before anything merges, Martin is that check, until 5c automates it.
-And it settles *when* the spec-testers run, which 5c builds on.
+- **On 11 October a screen rule went live broken** (finding 32): an empty note was shown blank instead of "—".
+  - Both spec-testers did as their runbook says: they marked the screen rules "not tested", correctly.
+  - The harness merged anyway, because a page under `src/` is inside the D-26 class.
+  - So for UI changes, D-26 is weaker than it looks.
+- **The fix is cheap, because of D-30.** A static SSR page is HTTP in and HTML out, as testable as a route.
+  `PageTest` already renders pages and submits their forms the way a browser does.
+- **The workbench (D-31) moved spec-testers to ship time.** This step is what makes their tests cover what the
+  operator previewed.
 
 ## Read first, in this order
 
 | File | Why |
 |---|---|
-| `FINDINGS.md` 32, then 28-29 | Screens and the defect; the change record and the spec-testers' isolation |
-| `AaaS-context.md` D-25, D-26, D-29, D-30, OQ-27 | What the order "tests before code" was for, and what replaces it |
-| `aaas-agent/harness/main.py` (`run_change`), `harness/change.py`, `run.sh` | The steps the workbench splits apart |
-| `aaas-app-demo/README.md` "Local development", `AGENT.md` | How the app already runs against a local Postgres (`PGPASSWORD`) |
+| `FINDINGS.md` 32, then 33 | The defect, the screen design; the workbench and why AaaS paused |
+| `AaaS-context.md` D-26, D-30, D-31, OQ-27, OQ-28 | The merge class, the screen rules, ship-time spec-testers |
+| `aaas-deployments/agent/write-acceptance.md` | The spec-tester runbook that gets a "test the Screen section" part |
+| `aaas-app-template/tests/App.Tests/Acceptance/AcceptanceBase.cs`, `tests/App.Tests/Pages/PageTest.cs` | What the spec-tester can call today, and what pages already have |
 
 ## State to verify before starting
 
-- **Infrastructure: destroyed** (`destroy` run 38151400239, 11 October 15:28 UTC; the hostname does not resolve). Leave
-  it down: this session needs no Azure until the last step, and only if that step deploys.
-- `aaas-agent` `master` is `4370edd`; `aaas-app-demo` `d3ab5df`; `aaas-app-template` `544cf02`; `aaas-docs` has #19 and
-  this file. Your local repos are pulled. `aaas-app-demo` has `backup/master-1615` and an untracked `git_magic.sh`.
-- Docker runs on the Mac (the harness needs it already). `postgres:16` pulls.
-- **GitHub is linked in claude.ai** for this session, or the bundle route of 11 October is planned for
-  (`aaas/.session-bundles/`, deleted afterwards).
+- **Infrastructure: destroyed** since 11 October (`destroy` run 38151400239). Leave it down unless the last step
+  deploys.
+- Heads as of 14 October:
+  - `aaas-agent` `master` has #13 (`workbench.sh` without `origin/HEAD`);
+  - `aaas-app-demo` has #31; `aaas-app-template` has #12;
+  - `aaas-deployments` is `3881b3f`, still pinning image `d3ab5df` and `app-stack` v0.4.0;
+  - `aaas-docs` has this file.
+- `aaas-app-demo` on Martin's Mac has an untracked `requests/item-soon-due-items-marked.md`, deliberately ambiguous
+  (finding 33). It is his.
+- No open deployment PRs. #42 and #43 were closed on purpose.
+- GitHub is linked in claude.ai, or the operator PAT is used through the Mac's shell (finding 33, "What cost time").
 
 ## The work
 
-The loop, with the commands it becomes:
+1. **`AcceptanceBase` gains `GetPageAsync(path)` and `SubmitFormAsync(form, fields)`.** HTML in the response, forms
+   posted as a browser would, using AngleSharp as `PageTest` does. In the template first, then the demo.
+2. **The runbook** (`write-acceptance.md`) gets a section on testing the *Screen* section through the page:
+   - what is shown;
+   - what each control does;
+   - what a refusal looks like.
 
-```
-request ──► build ──► preview ──► (edit request ──► rebuild ──► preview)* ──► ship
-```
-
-1. **Build without shipping.** `run.sh --task build --app-repo aaas-app-demo --change <name>`:
-   - the builder works on `change/<date>-<name>` from `requests/<name>.md` and pushes the branch
-   - it opens **no PR**, and no spec-tester runs
-   - the change can come from intake in the chat ("Try it" next to "Go ahead") or from a file Martin wrote
-2. **Preview.** In the app repo, `docker compose -f preview.yml up` builds the branch's image and starts it next to
-   `postgres:16` on `localhost:8080`, with `migrate` run first, exactly as the init container does.
-   - `scripts/preview-seed.sh` adds a few rows through the routes, never SQL.
-   - The image is the real one (D-20). If the preview works, the image works.
-3. **Iterate.** Martin edits `requests/<name>.md` **on the change branch**, in Rider, and commits.
-   `run.sh --task rebuild --change <name>`:
-   - a fresh builder session gets the new request, the old one, and the branch's diff, and changes the code to match
-   - the request's git history is the record of how the requirement moved
-4. **Ship.** `run.sh --task ship --change <name>` runs today's `create-change` from the branch onwards:
-   - the request moves into `changes/<id>/brief.md`
-   - two spec-testers write hidden tests from the *final* request, isolated on `master` as today
-   - PR, CI, fix rounds, D-26 merge, and delivery if Azure is up
-5. **Rider.** `.run/*.run.xml` in the app repo, shared: *Preview*, *Rebuild*, *Ship*, and *App (local Postgres)*, the
-   last for debugging with breakpoints. No plugin. Template first, then the demo.
-6. **One real loop** with Martin: ask, preview, change the request once, rebuild, preview, ship. Time each step.
+   Black-box: no component names, only what a person sees.
+3. **Score it as finding 27 did.**
+   - Planted screen defects: the 11 October empty note; a missing link; a refusal not shown; a wrong order.
+   - Then two spec-testers on the `item-table` request of 11 October.
+4. **Decide the merge class** (D-26) for a change that touches pages.
 
 ## Decisions I will need from you
 
-- **Spec-testers at ship time only.** I expect to argue yes. Running them per iteration costs about $1.30 and 10 minutes,
-  and throws their tests away whenever the request changes.
-  - This amends D-25. Its "tests written before any code existed" becomes "tests written by someone never shown the
-    code". The spec-tester gets `master` only, so it is still blind to the branch.
-  - Independence never came from the order. It came from the isolation, and the tests stay off the builder's disk.
-- **The request lives in `requests/<name>.md` on the change branch while iterating**, editable by you. It moves into the
-  immutable `changes/<id>/` only at ship. I expect to argue for this over editing in the chat page. Rider and git
-  already do editing and history well.
-- **Preview runs the real image with Docker Compose** rather than `dotnet run`. I expect to argue for the image, because
-  the image is what deploys. `dotnet run` stays as the Rider debug configuration.
-- **The chat page gets "Try it" only if it is cheap.** I expect to argue that the workbench is for you as operator first,
-  and that the §2 user's preview (OQ-26's "conversation plus a preview", §2) is a later hosted step (OQ-4).
+- **Does a page change stay inside D-26 once screens are tested?** I expect to argue yes, if two spec-testers'
+  page tests pass.
+- **Is the empty-note case a regression test** in the template, or only in the demo's record?
 
 ## Done when
 
-- Martin asks for a change, clicks through it on `localhost`, changes the request once and sees the rebuild follow, then
-  ships it, and the spec-testers' tests from the final request run in CI. All of it can be started from Rider.
+- A planted screen defect, the 11 October empty note among them, goes red on a spec-tester's test.
+- A screen-only change is merged on independent tests.
 
 ## Explicitly not this session
 
-- 5c (spec-testers test screens) and step 6 (a new app from nothing), which come next, in that order. A Rider plugin. A
-  hosted preview for the §2 user (OQ-4). The control plane. Anything commercial (D-19).
+- Step 6 (a new app from nothing).
+- The operator's chat on his local branch (OQ-28).
+- Hosting the chat (OQ-4).
+- Anything commercial (D-19).
 
 ## Carried over
 
-- **OQ-27, who tests a screen independently**: step 5c. Until then, the preview is the screen check.
-- **A probe item, "Empty note probe"**, was in the destroyed demo. It is gone with it.
-- **Antiforgery is off** for the screens (no sign-in). It changes when end users sign in.
-- **The harness's merges look like Martin's** on GitHub. Claude's manual merges of deployment PRs #38, #39 and #41
-  carry a comment; the harness's do not yet.
-- **The spec-testers run one after the other** (9 of 20 minutes on 11 October). Parallel would save about 4 minutes, and
-  matters more once ship is the only place they run.
+- **OQ-28, helping the operator write a request.** The workbench works, but its first real use stopped at writing
+  the request (finding 33).
+- **The harness only sees GitHub;** `run.sh --task build` does not push the request. `workbench.sh` does.
+- **The harness's merges look like Martin's** on GitHub.
+- **The spec-testers run one after the other.** Parallel would save about 4 minutes, and matters more now that ship
+  is the only place they run.
 - **The reporter has only been seen on the success path** (OQ-22). **The chat is one conversation in memory** (OQ-4).
-- **A green destroy does not free the name** (finding 30); **region capacity** (OQ-25), with the demo in `northeurope`.
-- **The shared spec-tester blind spot** (finding 29). **Pending requests in the demo:** `item-tags`, `item-upcoming`.
-  Old PRs #14-16 and #6 can be closed.
-- **Policy false positives**, the permanent `workload_profile_name` diff, the operator token is admin,
-  `gh pr close` refused by policy, no `.terraform.lock.hcl`, no ruleset on `aaas-deployments`, a capped run loses
-  its work (finding 22).
+- **A green destroy does not free the name** (finding 30). **Region capacity** (OQ-25), with the demo in
+  `northeurope`.
+- **The shared spec-tester blind spot** (finding 29). **Pending requests in the demo:** `item-tags` (predates the
+  template) and `item-upcoming`. Old PRs #14-16 and #6 can be closed.
+- **Smaller known issues:**
+  - policy false positives;
+  - the permanent `workload_profile_name` diff;
+  - the operator token is admin;
+  - `gh pr close` is refused by policy;
+  - no `.terraform.lock.hcl`;
+  - no ruleset on `aaas-deployments`;
+  - a capped run loses its work (finding 22).
