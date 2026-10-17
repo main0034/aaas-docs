@@ -75,24 +75,27 @@ One ArchUnitNET test class covers what the compiler cannot see:
   `Npgsql.*` type. The build makes this true today; the test keeps it true if someone adds
   a package to `App.Core`.
 - `*.Domain` namespaces depend on no other project namespace except `Common.Domain`.
-- No slice depends on another slice's `Domain`, `Commands` or `Queries`, only on its
-  `Ports.In`.
+- A slice references only itself and `Common`, except to implement an interface from
+  another slice's `Domain`; the slice graph is acyclic
+  ([ADR-0008](../adr/0008-slices-meet-through-the-consumers-interfaces.md)).
+- A command handler depends on no query; a query handler on no `IUnitOfWork` and no
+  repository method that writes ([ADR-0012](../adr/0012-commands-and-queries-stay-apart.md)).
 - Every type in `*.Commands` or `*.Queries` ending in `Handler` implements an interface
-  from its own slice's `Ports.In`.
+  from its own folder.
 - Only types in `App.Adapters.Persistence` call a method named `Hydrate`
   ([ADR-0003](../adr/0003-split-aggregate-creation-into-create-and-hydrate.md)).
 - Aggregates declare no public constructors.
 - Typed primitives derive from `TypedGuidBase<TSelf>` or `TypedStringBase<TSelf>`, closed
   over themselves; a snippet comparing two id types must fail to compile with CS0019
   ([ADR-0009](../adr/0009-typed-primitives-on-generic-bases.md)).
-- Every interface in `Ports.Out` ends in `Repository` or `Store`, or is `IUnitOfWork`.
+- An interface with a method adding an aggregate ends in `Repository`.
 - Every EF entity is `Db` + a domain type's name and derives from `DbImmutableEntity` or
   `DbMutableEntity` ([ADR-0010](../adr/0010-db-entities-keys-audit-columns-and-version.md)).
 
 **IL-level tools do not see inside async methods.** The compiler moves an async method's
 body into a generated state-machine type, and ArchUnitNET does not attribute that type's
 dependencies to the class. Every handler is async, so a slice rule written only against IL
-never sees a handler body. The two slice rules also run on source: Roslyn compiles the
+never sees a handler body. The slice rules therefore run on source: Roslyn compiles the
 core's files and resolves every name
 ([ADR-0011](../adr/0011-slice-rules-checked-on-source.md)).
 

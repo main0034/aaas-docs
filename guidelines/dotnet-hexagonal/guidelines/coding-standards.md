@@ -52,12 +52,13 @@ Use the modern constructs where they make code plainer:
   `New` or a public constructor (see [domain-modelling.md](domain-modelling.md)). Value
   objects and typed identifiers, which have no lifecycle, use `From(...)`, and identifiers
   add `New()`: `Username.From("martin")`, `UserId.New()`.
-- Outbound ports that store an aggregate are repositories, named after the aggregate in the
-  singular: `IUserRepository`, `IAccountRepository`. Their implementation names the
-  technology: `PostgresUserRepository`. A read-only source is a store (`IContentStore`), and
-  the transaction boundary is `IUnitOfWork`. A port is never named after the technology
-  (`IEfUserRepository`). An architecture test checks that every interface in `Ports.Out`
-  ends in `Repository` or `Store`, or is `IUnitOfWork`.
+- Outbound ports live in the slice's `Domain`. One that stores an aggregate is a repository,
+  named after the aggregate in the singular: `IUserRepository`, implemented as
+  `PostgresUserRepository`. A read-only source is a store (`IContentStore`); the transaction
+  boundary is `IUnitOfWork`; a need another slice fills is named for the need
+  (`IAccountOwnerCheck`). A port is never named after the technology (`IEfUserRepository`).
+  An architecture test checks that an interface with a method adding an aggregate ends in
+  `Repository`.
 - Async methods end in `Async` and take a `CancellationToken` as the last parameter, named
   `ct`, passed all the way down.
 - Booleans read as predicates: `Archived`, `IsOwnedBy(...)`.

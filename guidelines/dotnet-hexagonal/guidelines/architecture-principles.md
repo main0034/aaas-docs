@@ -34,7 +34,7 @@ flowchart LR
     PERS --> DB[("PostgreSQL")]
 ```
 
-Concretely, in `Domain`, `Commands`, `Queries` and `Ports` you will not find:
+Concretely, in `Domain`, `Commands` and `Queries` you will not find:
 `Microsoft.EntityFrameworkCore`, `DbContext`, EF attributes (`[Key]`, `[Table]`,
 `[Column]`), `Microsoft.AspNetCore.*`, `HttpContext`, `IResult`, `System.Text.Json`
 attributes, or SQL. There is no exception, not even for transactions (see
@@ -43,28 +43,33 @@ attributes, or SQL. There is no exception, not even for transactions (see
 The build enforces inward-only. `App.Core` has no ASP.NET Core framework reference and no
 EF Core or Npgsql package, so it cannot see them at all
 ([ADR-0005](../adr/0005-adapters-as-separate-projects.md)). The compiler cannot see slice
-isolation, `Hydrate`, or whether handlers implement a port. ArchUnitNET tests cover those;
+isolation, `Hydrate`, or whether handlers implement a port. Architecture tests cover those,
+on IL and on compiler-resolved source ([ADR-0011](../adr/0011-slice-rules-checked-on-source.md));
 see [testing-strategy.md](testing-strategy.md).
 
 ## 2. Solution and namespace structure
 
-Slice by **feature first**, then by hexagon layer. Everything about one concept lives
-together, and each slice has the same internal shape:
+Slice by **feature first**, then by kind. Everything about one concept lives together, and
+each slice has the same internal shape
+([ADR-0004](../adr/0004-operations-are-an-interface-a-contract-and-a-handler.md)):
 
 ```
 App.Core
 ├── Users
-│   ├── Domain                 User, Username, UserId, invariants
-│   ├── Commands               CreateUserCommandHandler
-│   ├── Queries                GetUserQueryHandler
-│   └── Ports
-│       ├── In                 ICreateUser + CreateUserCommand, IGetUser + GetUserQuery + UserView
-│       └── Out                IUserRepository         (interfaces the adapters implement)
+│   ├── Domain                 User, Username, UserId, invariants; outbound interfaces:
+│   │                          IUserRepository, and any need another slice fills
+│   ├── Commands               ICreateUser, CreateUserCommand, CreateUserCommandHandler
+│   └── Queries                IGetUser, GetUserQuery, UserView, GetUserQueryHandler
 ├── Accounts
 ├── Goals
 └── Common
-    └── Domain                 Money, DomainException, shared value objects
+    └── Domain                 Money, DomainException, shared value objects, IUnitOfWork
 ```
+
+An operation's interface (the inbound port), its command or query, its result and its
+handler sit together in `Commands/` or `Queries/`. The interfaces a slice needs implemented
+from outside (the outbound ports) sit in its `Domain/`. There is no `Ports` folder: a port
+is a role, not a place.
 
 Folders and namespaces match: `App.Core.Users.Commands`. The slices live in the
 **`App.Core` project**. Adapters live in projects of their own that reference it
@@ -82,10 +87,12 @@ rather than a convention. A domain class cannot use `DbContext` even by accident
 
 Rules:
 
-- A slice may depend on **another slice's inbound ports only**. It never depends on
-  another slice's domain, handlers or persistence. Cross-slice access goes through a port
-  like any other collaborator.
-- Types are **`internal` by default**. Only ports, commands, queries, results, and domain
+- **A slice references only itself and `Common`**, with one exception: it may implement an
+  interface another slice declares in its `Domain`. When `Accounts` needs to know something
+  `Users` knows, `Accounts/Domain` declares the need (`IAccountOwnerCheck`) and `Users`
+  implements it through its own domain. **The graph of slices is acyclic.**
+  ([ADR-0008](../adr/0008-slices-meet-through-the-consumers-interfaces.md))
+- Types are **`internal` by default**. Only interfaces, commands, queries, results, and domain
   types that another project or slice legitimately needs are `public`. Handlers are
   `public` only because the composition root in `App.Host` registers them (see the open
   decision in [§8](#8-decisions-still-open)).
@@ -99,21 +106,27 @@ Rules:
 heart of the slicing commitment: the type names in `Commands/` and `Queries/` are the list
 of things the application can do, readable at a glance.
 
-Write handlers live in `Commands/`, read handlers in `Queries/`. Each handler implements a
-small inbound port, so adapters and other slices depend on an interface rather than on the
-handler. **The port's whole contract lives in `Ports/In`**: the interface, its command or
-query, and its result ([ADR-0008](../adr/0008-inbound-port-contracts-live-in-ports-in.md)).
-Another slice may use only `Ports.In`, so a command kept in `Commands/` could never be sent
-by another slice.
+Writes live in `Commands/`, reads in `Queries/`, each operation as its interface, its
+command or query and result, and its handler, side by side. Adapters depend on the
+interface, never on the handler.
+
+**Commands and queries stay apart**
+([ADR-0012](../adr/0012-commands-and-queries-stay-apart.md)):
+
+- a query never writes: no `IUnitOfWork`, no repository method that changes anything;
+- a command never depends on a query, in its own slice or another. It decides through its
+  domain, its repositories, and interfaces in its `Domain` that other slices implement;
+- a command returns its own outcome (an id, what happened), never a read model. A page that
+  needs more asks a query afterwards.
 
 ```csharp
-// Ports/In: what the outside world may ask for
+// Commands/: what the outside world may ask for
 public interface IRecordDeposit
 {
     Task<TransactionId> HandleAsync(RecordDepositCommand command, CancellationToken ct);
 }
 
-// Ports/In: the input, validated where it is defined, beside its port (ADR-0008)
+// Commands/: the input, validated where it is defined, beside its interface
 public sealed record RecordDepositCommand
 {
     public RecordDepositCommand(
@@ -139,7 +152,7 @@ public sealed record RecordDepositCommand
     public string? Note { get; }
 }
 
-// Commands: the orchestration, and only the orchestration
+// Commands/: the orchestration, and only the orchestration
 public sealed class RecordDepositCommandHandler(
     IAccountRepository accounts,          // outbound port
     ITransactionRepository transactions,  // outbound port
@@ -187,10 +200,10 @@ Conventions:
 
 |                |                  Inbound (driving)                   |                     Outbound (driven)                     |
 |----------------|------------------------------------------------------|-----------------------------------------------------------|
-| Who calls      | Web adapter, background jobs, other slices, tests    | The handler                                               |
-| Who implements | The command or query handler                         | Persistence adapter, the host, fakes in tests             |
-| Lives in       | `<Slice>/Ports/In`                                   | `<Slice>/Ports/Out`                                       |
-| Named after    | The action: `IRecordDeposit`                         | The aggregate: `IAccountRepository`; a read-only source: `IContentStore` |
+| Who calls      | Web adapter, background jobs, tests                  | The handler                                               |
+| Who implements | The command or query handler                         | An adapter, another slice (ADR-0008), fakes in tests      |
+| Lives in       | `<Slice>/Commands` or `<Slice>/Queries`, beside its handler | `<Slice>/Domain`                                   |
+| Named after    | The action: `IRecordDeposit`                         | The aggregate: `IAccountRepository`; a read-only source: `IContentStore`; a need: `IAccountOwnerCheck` |
 
 - The **inside** owns the ports. An outbound port describes what the domain needs, in the
   domain's language, not what EF Core offers: `IAccountRepository.ByIdAsync(...)`, not
@@ -264,6 +277,8 @@ Aggregates, value objects, invariants and the `Create`/`Hydrate` split are cover
 - Static access to the current time, user or transaction (`DateTime.Now`,
   `HttpContext.Current`-style ambient state)
 - `Common`, `Shared` or `Utils` projects that everything depends on
+- A command handler calling a query, or a query handler that writes
+- Two slices that each implement the other's interfaces
 - Comments explaining what code does instead of naming things properly
 
 ## 8. Decisions still open
@@ -277,7 +292,7 @@ Aggregates, value objects, invariants and the `Create`/`Hydrate` split are cover
   *Postponed* in [../adr/](../adr/).
 - **TODO: read models.** How far to take the CQRS-lite escape hatch in §3 before it needs
   its own structure.
-- **TODO: slice isolation.** Keeping technology out of `App.Core` is settled by
-  [ADR-0005](../adr/0005-adapters-as-separate-projects.md). Slices policing *each other*
-  inside `App.Core` is not. For now that is ArchUnitNET only. The alternative is one
-  project per slice, which multiplies projects.
+- **Slice isolation** inside `App.Core` is a checked rule
+  ([ADR-0008](../adr/0008-slices-meet-through-the-consumers-interfaces.md),
+  [ADR-0011](../adr/0011-slice-rules-checked-on-source.md)), not one project per slice. The
+  acyclic rule keeps one project per slice possible later.
