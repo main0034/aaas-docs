@@ -38,7 +38,7 @@ The details are in
   a good fit for read-heavy dashboards, but disproportionate to the size of these
   applications. We keep a narrow escape hatch instead: read-only query ports returning
   read models. We call handlers through their ports, not through a mediator
-  (see [ADR-0004](0004-command-and-query-handlers-behind-inbound-ports.md)).
+  (see [ADR-0004](0004-operations-are-an-interface-a-contract-and-a-handler.md)).
 - **Vertical slice architecture without a shared domain**: fewer layers, and each feature
   is self-contained. Rejected because the rules that matter span features, and they need
   one home: the aggregate.

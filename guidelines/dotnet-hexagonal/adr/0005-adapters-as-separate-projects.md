@@ -7,7 +7,7 @@
 ## Context
 
 ADRs [0001](0001-hexagonal-architecture-with-use-case-slices.md) and
-[0004](0004-command-and-query-handlers-behind-inbound-ports.md) settle the inside of the
+[0004](0004-operations-are-an-interface-a-contract-and-a-handler.md) settle the inside of the
 hexagon. They leave adapters with two possible homes: folders within each slice in a
 single project, or separate projects referencing a core project.
 
@@ -20,7 +20,7 @@ only once someone runs the tests, and only for the patterns the test happens to 
 ## Decision
 
 The solution is split into projects. The core project contains the feature slices
-(`Domain`, `Commands`, `Queries`, `Ports/In`, `Ports/Out`). It uses the plain
+(`Domain`, `Commands`, `Queries`). It uses the plain
 `Microsoft.NET.Sdk`, with no `Microsoft.AspNetCore.App` framework reference and no
 package references at all. Each adapter is its own project referencing core, and a thin
 host project assembles them.
