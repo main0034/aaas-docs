@@ -67,6 +67,7 @@ Until that template exists, this is reference material for humans and for a bigg
 | Domain | EF Core entities are the model | Plain C# aggregates; separate EF entities and mappers ([ADR-0002](adr/0002-domain-free-of-ef-core.md)) |
 | Tests | Must pass with no database | Domain and handler tests need none; persistence adapter tests run against a real Postgres |
 | Formatting | `dotnet format --verify-no-changes` | CSharpier for layout, `dotnet format` for analyzers only |
+| Test framework | xUnit | TUnit ([ADR-0007](adr/0007-tunit-as-the-test-framework.md)) |
 | Assertions | xUnit `Assert` | AwesomeAssertions only |
 | Migrations | EF migrations in `src/App` | EF migrations in `App.Adapters.Persistence` |
 

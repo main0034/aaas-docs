@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: martin
-last-updated: 2026-09-28
+last-updated: 2026-10-17
 ---
 
 # Architecture principles
@@ -29,7 +29,7 @@ flowchart LR
     WEB["Web adapter<br/>minimal API endpoints"] -->|calls| IN["Inbound port<br/>ICreateUser"]
     IN --- APP
     APP["Handler<br/>CreateUserCommandHandler"] --> DOM["Domain<br/>User, Username, rules"]
-    APP -->|depends on| OUT["Outbound port<br/>IUsers"]
+    APP -->|depends on| OUT["Outbound port<br/>IUserRepository"]
     PERS["Persistence adapter<br/>EF Core"] -->|implements| OUT
     PERS --> DB[("PostgreSQL")]
 ```
@@ -55,11 +55,11 @@ together, and each slice has the same internal shape:
 App.Core
 ├── Users
 │   ├── Domain                 User, Username, UserId, invariants
-│   ├── Commands               CreateUserCommand + CreateUserCommandHandler
-│   ├── Queries                GetUserQuery + GetUserQueryHandler, read models
+│   ├── Commands               CreateUserCommandHandler
+│   ├── Queries                GetUserQueryHandler
 │   └── Ports
-│       ├── In                 ICreateUser, IGetUser   (interfaces the handlers implement)
-│       └── Out                IUsers                  (interfaces the adapters implement)
+│       ├── In                 ICreateUser + CreateUserCommand, IGetUser + GetUserQuery + UserView
+│       └── Out                IUserRepository         (interfaces the adapters implement)
 ├── Accounts
 ├── Goals
 └── Common
@@ -99,8 +99,12 @@ Rules:
 heart of the slicing commitment: the type names in `Commands/` and `Queries/` are the list
 of things the application can do, readable at a glance.
 
-Writes live in `Commands/`, reads in `Queries/`. Each handler implements a small inbound
-port, so adapters and other slices depend on an interface rather than on the handler.
+Write handlers live in `Commands/`, read handlers in `Queries/`. Each handler implements a
+small inbound port, so adapters and other slices depend on an interface rather than on the
+handler. **The port's whole contract lives in `Ports/In`**: the interface, its command or
+query, and its result ([ADR-0008](../adr/0008-inbound-port-contracts-live-in-ports-in.md)).
+Another slice may use only `Ports.In`, so a command kept in `Commands/` could never be sent
+by another slice.
 
 ```csharp
 // Ports/In: what the outside world may ask for
@@ -109,7 +113,7 @@ public interface IRecordDeposit
     Task<TransactionId> HandleAsync(RecordDepositCommand command, CancellationToken ct);
 }
 
-// Commands: the input, validated where it is defined
+// Ports/In: the input, validated where it is defined, beside its port (ADR-0008)
 public sealed record RecordDepositCommand
 {
     public RecordDepositCommand(
@@ -137,8 +141,8 @@ public sealed record RecordDepositCommand
 
 // Commands: the orchestration, and only the orchestration
 public sealed class RecordDepositCommandHandler(
-    IAccounts accounts,          // outbound port
-    ITransactions transactions,  // outbound port
+    IAccountRepository accounts,          // outbound port
+    ITransactionRepository transactions,  // outbound port
     IUnitOfWork unitOfWork)      // outbound port: the transaction boundary
     : IRecordDeposit
 {
@@ -186,10 +190,10 @@ Conventions:
 | Who calls      | Web adapter, background jobs, other slices, tests    | The handler                                               |
 | Who implements | The command or query handler                         | Persistence adapter, the host, fakes in tests             |
 | Lives in       | `<Slice>/Ports/In`                                   | `<Slice>/Ports/Out`                                       |
-| Named after    | The action: `IRecordDeposit`                         | The need, in domain terms: `IAccounts`, `ITransactions`   |
+| Named after    | The action: `IRecordDeposit`                         | The aggregate: `IAccountRepository`; a read-only source: `IContentStore` |
 
 - The **inside** owns the ports. An outbound port describes what the domain needs, in the
-  domain's language, not what EF Core offers: `IAccounts.ByIdAsync(...)`, not
+  domain's language, not what EF Core offers: `IAccountRepository.ByIdAsync(...)`, not
   `DbSet<AccountEntity>.FindAsync(...)`.
 - Keep ports **narrow** (Interface Segregation). A handler that only reads accounts should
   not be able to delete them. Several small ports beat one repository interface with
@@ -210,7 +214,7 @@ Aggregates, value objects, invariants and the `Create`/`Hydrate` split are cover
 | **S**ingle responsibility | One handler does one thing. A type that needs "and" in its description is two types.                                                              |
 | **O**pen/closed           | New behaviour arrives as a new handler or a new adapter, not as another `if` branch in an existing one.                                           |
 | **L**iskov substitution   | Any adapter implementing a port must honour its contract, including a fake used in tests. If the fake needs to lie, the port is wrong.            |
-| **I**nterface segregation | Narrow ports (§4). No "God repository": `IUsers` grows a method only when a handler needs it.                                                     |
+| **I**nterface segregation | Narrow ports (§4). No "God repository": `IUserRepository` grows a method only when a handler needs it.                                           |
 | **D**ependency inversion  | The inside defines the interfaces; the outside implements them. This *is* the hexagon. DIP is the principle the whole architecture rests on.      |
 
 ## 6. Practices

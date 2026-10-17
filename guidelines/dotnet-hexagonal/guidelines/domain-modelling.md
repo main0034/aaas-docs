@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: martin
-last-updated: 2026-09-28
+last-updated: 2026-10-17
 ---
 
 # Domain modelling
@@ -11,7 +11,7 @@ How we build the inside of the hexagon. Structure and the dependency rule are in
 and invariants are in its [domain model](../architecture/domain-model.md), and the words
 are in its glossary.
 
-The domain is plain C#, testable with plain xUnit: no host, no `DbContext`, no
+The domain is plain C#, testable with plain TUnit: no host, no `DbContext`, no
 `WebApplicationFactory`.
 
 ## Aggregates
@@ -118,34 +118,59 @@ properties, not `init`, so `with` cannot bypass validation either.
 
 Names and identifiers are never bare `string`s or `Guid`s. Then `Link(UserId, GroupId)`
 cannot be called with the arguments swapped, and a `Username` cannot be stored where an
-email belongs. In C# a record per type gives value equality and type distinctness for
-free. A `UserId` and an `AccountId` holding the same `Guid` are different types, and
-comparing them is a compile error. The Java original needed shared base classes for this;
-here each type is a few lines:
+email belongs. Each is a `sealed record` deriving from a generic base closed over itself
+([ADR-0009](../adr/0009-typed-primitives-on-generic-bases.md)):
 
 ```csharp
-public sealed record UserId
+// Common/Domain: written once.
+public abstract record TypedGuidBase<TSelf>
+    where TSelf : TypedGuidBase<TSelf>, ITypedGuid<TSelf>
 {
-    private UserId(Guid value)
+    protected TypedGuidBase(Guid value)
     {
         if (value == Guid.Empty)
-            throw new ArgumentException("UserId cannot be empty", nameof(value));
+            throw new ArgumentException($"{typeof(TSelf).Name} cannot be empty", nameof(value));
         Value = value;
     }
 
     public Guid Value { get; }
 
-    public static UserId New() => new(Guid.CreateVersion7());   // a new identity, for User.Create
-    public static UserId From(Guid value) => new(value);         // an identity that already exists
+    public static TSelf New() => TSelf.From(Guid.CreateVersion7());   // a new identity
 
-    public override string ToString() => Value.ToString();
+    public sealed override string ToString() => Value.ToString();
 }
 
-public sealed record Username
+public interface ITypedGuid<TSelf>
+    where TSelf : TypedGuidBase<TSelf>, ITypedGuid<TSelf>
 {
-    private Username(string value) => Value = value;
+    static abstract TSelf From(Guid value);                           // an identity that exists
+}
+
+public abstract record TypedStringBase<TSelf>
+    where TSelf : TypedStringBase<TSelf>
+{
+    protected TypedStringBase(string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        Value = value;
+    }
 
     public string Value { get; }
+
+    public sealed override string ToString() => Value;
+}
+
+// Per type: a few lines.
+public sealed record UserId : TypedGuidBase<UserId>, ITypedGuid<UserId>
+{
+    private UserId(Guid value) : base(value) { }
+
+    public static UserId From(Guid value) => new(value);
+}
+
+public sealed record Username : TypedStringBase<Username>
+{
+    private Username(string value) : base(value) { }
 
     public static Username From(string value)
     {
@@ -155,15 +180,22 @@ public sealed record Username
             throw new ArgumentException("Username is longer than 50 characters", nameof(value));
         return new Username(normalized);
     }
-
-    public override string ToString() => Value;
 }
 ```
 
+- Each type closes the base over **itself**, so two types share no base but `object`:
+  `userId == accountId` does not compile (CS0019), exactly as with unrelated records. An
+  architecture test checks that every domain type with a public `Guid` or `string` `Value`
+  derives from the matching base closed over itself; `AccountId : TypedGuidBase<UserId>`
+  would compile and compare with `UserId` again. A second test compiles a cross-type
+  comparison against the real core and expects CS0019.
 - Types are `sealed`, have a private constructor and static factories. They are never
   `record struct`, for the `default` reason above.
 - `New()` and `From(...)` are the identifier's version of the aggregate's `Create` and
   `Hydrate` split. Minting an identity is not the same act as accepting one that exists.
+  `New()` is inherited; the base's constraint makes the compiler demand `From`. It is a
+  static member of a generic type, which CA1000 flags; callers write `UserId.New()`, never
+  the type argument, so suppress CA1000 on that one method with that reason.
 - New identifiers are UUIDv7 (`Guid.CreateVersion7()`). They are time-ordered, which keeps
   Postgres primary-key indexes compact. Do not rely on `Guid.CompareTo` matching Postgres
   `ORDER BY id`. Sort by a real timestamp when order matters.
@@ -174,9 +206,7 @@ public sealed record Username
 - Because the persistence adapter has its own EF entities
   ([ADR-0002](../adr/0002-domain-free-of-ef-core.md)), those entities hold plain `Guid` and
   `string` columns. The mapper converts, and no EF value converters are needed.
-- **TODO:** if the number of typed primitives grows past a dozen, evaluate a source
-  generator (Vogen, StronglyTypedId) against the hand-written records. Record the choice
-  as an ADR.
+- Int-backed values can follow the same pattern (`TypedIntBase<TSelf>`) when one is wanted.
 
 ## Closed sets of alternatives
 
