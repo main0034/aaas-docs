@@ -33,7 +33,7 @@ requirement.
 | Schema      | EF Core migrations, applied by `App migrate` before the app starts                  |
 | Database    | PostgreSQL                                                                           |
 | Build       | `dotnet` solution: `App.Core`, `App.Adapters.Web`, `App.Adapters.Persistence`, `App.Host` |
-| Tests       | xUnit v3, AwesomeAssertions, ArchUnitNET, Testcontainers for PostgreSQL             |
+| Tests       | TUnit, AwesomeAssertions, ArchUnitNET, Testcontainers for PostgreSQL                |
 | Formatting  | CSharpier; `dotnet format` for analyzers only                                       |
 
 ## Shape: a hexagon per feature slice

@@ -1,7 +1,7 @@
 ---
 status: active
 owner: martin
-last-updated: 2026-09-28
+last-updated: 2026-10-17
 ---
 
 # Architecture decision records
@@ -26,6 +26,11 @@ Copy [0000-template.md](0000-template.md) to start one.
 | [0004](0004-command-and-query-handlers-behind-inbound-ports.md)   | Command and query handlers behind inbound ports       | Accepted |
 | [0005](0005-adapters-as-separate-projects.md)                     | Adapters live in separate projects                    | Accepted |
 | [0006](0006-formatting-with-csharpier.md)                         | Formatting with CSharpier                             | Accepted |
+| [0007](0007-tunit-as-the-test-framework.md)                       | TUnit as the test framework                           | Accepted |
+| [0008](0008-inbound-port-contracts-live-in-ports-in.md)           | An inbound port's contract lives beside it in Ports/In | Accepted |
+| [0009](0009-typed-primitives-on-generic-bases.md)                 | Typed primitives on generic bases                     | Accepted |
+| [0010](0010-db-entities-keys-audit-columns-and-version.md)        | Db entities: naming, keys, audit columns, version     | Accepted |
+| [0011](0011-slice-rules-checked-on-source.md)                     | Slice rules also checked on source                    | Accepted |
 
 ## Postponed
 
@@ -34,4 +39,3 @@ Decisions we have consciously deferred, so nobody quietly makes them in a pull r
 |                                         Question                                          |                Why postponed                 |            Decide by             |
 |-------------------------------------------------------------------------------------------|----------------------------------------------|----------------------------------|
 | How handlers are registered (explicit in `App.Host` vs an `AddCore()` extension in Core)  | Not enough experience with the trade-off yet | After the first few slices exist |
-| Hand-written typed identifiers vs a source generator (Vogen, StronglyTypedId)              | Only a few identifiers exist                 | Past a dozen typed primitives    |
